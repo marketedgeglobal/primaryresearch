@@ -1,44 +1,23 @@
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 *.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual environments
-.venv/
 venv/
-ENV/
+.venv/
 
-# Unit test / coverage
-.coverage
-coverage.xml
-htmlcov/
-.tox/
-.pytest_cache/
-
-# IDE
+.DS_Store
 .vscode/
 .idea/
 
-# OS
-.DS_Store
-
-# Temporary secrets/keys
+rows.json
+analysis.json
+schema_validation_error.json
 /tmp/
-*.key
-*.pem
+
+analyses/*
+!analyses/.gitkeep
