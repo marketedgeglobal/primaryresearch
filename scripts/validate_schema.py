@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+from config import load_config
 from jsonschema import ValidationError, validate
 from log_utils import log, log_error
 from run_metadata import generate_run_metadata
@@ -38,6 +39,15 @@ def main() -> int:
     metadata = generate_run_metadata()
     run_id = metadata["run_id"]
     log(f"Run ID: {run_id}")
+
+    try:
+        cfg = load_config()
+    except Exception as exc:
+        log_error(f"Configuration error: {exc}")
+        return 1
+
+    log("Config keys in use: output_dir, provider, timeout_seconds")
+
     args = parse_args()
 
     try:

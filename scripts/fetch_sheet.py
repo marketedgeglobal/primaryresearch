@@ -13,6 +13,7 @@ import json
 import sys
 from typing import Any
 
+from config import load_config
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from log_utils import log, log_error
@@ -23,18 +24,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch rows from a Google Sheet.")
     parser.add_argument(
         "--service-account",
-        required=True,
+        default=None,
         help="Path to service account JSON file.",
     )
     parser.add_argument(
         "--spreadsheet-id",
-        required=True,
+        default=None,
         help="Spreadsheet ID.",
     )
     parser.add_argument(
         "--range",
         dest="range_name",
-        required=True,
+        default=None,
         help="Sheet range to read.",
     )
     parser.add_argument(
@@ -73,6 +74,21 @@ def main() -> int:
     run_id = metadata["run_id"]
     log(f"Run ID: {run_id}")
     args = parse_args()
+
+    try:
+        cfg = load_config(
+            {
+                "spreadsheet_id": args.spreadsheet_id,
+                "service_account_path": args.service_account,
+                "range": args.range_name,
+            }
+        )
+    except Exception as exc:
+        log_error(f"Configuration error: {exc}")
+        return 1
+
+    log("Config keys in use: spreadsheet_id, range, service_account_path, timeout_seconds")
+
     if args.limit < 0:
         log_error("--limit must be >= 0")
         return 1
@@ -81,7 +97,7 @@ def main() -> int:
     try:
         log(f"[{run_id}] Loading service account credentials")
         creds = service_account.Credentials.from_service_account_file(
-            args.service_account, scopes=scopes
+            cfg["service_account_path"], scopes=scopes
         )
     except Exception as exc:
         log_error(f"Failed to load service account: {exc}")
@@ -93,7 +109,7 @@ def main() -> int:
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=args.spreadsheet_id, range=args.range_name)
+            .get(spreadsheetId=cfg["spreadsheet_id"], range=cfg["range"])
             .execute()
         )
     except Exception as exc:

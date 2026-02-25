@@ -17,6 +17,7 @@ import sys
 from typing import Any
 
 import requests
+from config import load_config
 from log_utils import log, log_error
 from run_metadata import generate_run_metadata
 
@@ -25,7 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Call an AI provider and write analysis JSON.")
     parser.add_argument("--input", required=True, help="Path to rows.json")
     parser.add_argument("--run-id", required=True, help="Run identifier")
-    parser.add_argument("--api-key", required=True, help='Provider API key or "__MOCK__"')
+    parser.add_argument("--api-key", default=None, help='Provider API key or "__MOCK__"')
+    parser.add_argument("--provider", default=None, help="AI provider (openai or mock)")
+    parser.add_argument("--model", default=None, help="AI model name")
+    parser.add_argument("--timeout-seconds", type=int, default=None, help="AI request timeout in seconds")
     parser.add_argument("--out", required=True, help="Output JSON path")
     return parser.parse_args()
 
@@ -60,20 +64,20 @@ def build_prompt(rows: list[dict[str, Any]], run_id: str) -> str:
     )
 
 
-def call_openai(api_key: str, prompt: str) -> str:
+def call_openai(api_key: str, prompt: str, model: str, timeout_seconds: int) -> str:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4o-mini",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=timeout_seconds)
         response.raise_for_status()
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
@@ -94,8 +98,8 @@ def call_openai(api_key: str, prompt: str) -> str:
     return content
 
 
-def call_ai_provider(api_key: str, prompt: str) -> str:
-    if api_key == "__MOCK__":
+def call_ai_provider(provider: str, api_key: str, prompt: str, model: str, timeout_seconds: int) -> str:
+    if provider == "mock" or api_key == "__MOCK__":
         mock_payload = {
             "generated_utc": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
             "run_id": "mock-run",
@@ -118,7 +122,7 @@ def call_ai_provider(api_key: str, prompt: str) -> str:
             ],
         }
         return json.dumps(mock_payload, ensure_ascii=False)
-    return call_openai(api_key, prompt)
+    return call_openai(api_key, prompt, model, timeout_seconds)
 
 
 def extract_json_from_fence(raw: str) -> str | None:
@@ -139,6 +143,21 @@ def main() -> int:
     metadata_run_id = metadata["run_id"]
     log(f"Run ID: {metadata_run_id}")
     args = parse_args()
+
+    try:
+        cfg = load_config(
+            {
+                "provider": args.provider,
+                "api_key": args.api_key,
+                "model": args.model,
+                "timeout_seconds": args.timeout_seconds,
+            }
+        )
+    except Exception as exc:
+        log_error(f"Configuration error: {exc}")
+        return 1
+
+    log("Config keys in use: provider, model, timeout_seconds, allow_mock")
     effective_run_id = args.run_id or metadata_run_id
 
     try:
@@ -156,7 +175,13 @@ def main() -> int:
 
     try:
         log("Calling AI provider")
-        raw = call_ai_provider(args.api_key, prompt)
+        raw = call_ai_provider(
+            cfg["provider"],
+            cfg["api_key"],
+            prompt,
+            cfg["model"],
+            cfg["timeout_seconds"],
+        )
     except Exception as exc:
         log_error(f"AI provider call failed: {exc}")
         return 1
