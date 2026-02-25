@@ -4,7 +4,7 @@
 Usage:
     python scripts/call_ai.py --input rows.json --run-id 12345 --api-key __MOCK__ --out analysis.json
 
-Suggested commit message: feat: add scripts/call_ai.py with prompt builder and mock provider
+Suggested commit message: feat: add OpenAI provider integration to call_ai.py
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ import json
 import re
 import sys
 from typing import Any
+
+import requests
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,8 +58,41 @@ def build_prompt(rows: list[dict[str, Any]], run_id: str) -> str:
     )
 
 
+def call_openai(api_key: str, prompt: str) -> str:
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        body = exc.response.text[:500] if exc.response is not None else str(exc)
+        raise RuntimeError(f"OpenAI API HTTP error (status {status}): {body}") from exc
+    except requests.RequestException as exc:
+        raise RuntimeError(f"OpenAI API request failed: {exc}") from exc
+
+    try:
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+    except Exception as exc:
+        raise RuntimeError("OpenAI API response format was unexpected") from exc
+
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("OpenAI API returned empty response content")
+
+    return content
+
+
 def call_ai_provider(api_key: str, prompt: str) -> str:
-    _ = prompt
     if api_key == "__MOCK__":
         mock_payload = {
             "generated_utc": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
@@ -81,11 +116,7 @@ def call_ai_provider(api_key: str, prompt: str) -> str:
             ],
         }
         return json.dumps(mock_payload, ensure_ascii=False)
-
-    raise RuntimeError(
-        "TODO: Implement real provider call in call_ai_provider(api_key, prompt), including endpoint, "
-        "headers, model, timeout, and retry handling for your AI service."
-    )
+    return call_openai(api_key, prompt)
 
 
 def extract_json_from_fence(raw: str) -> str | None:
