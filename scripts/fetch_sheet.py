@@ -16,6 +16,7 @@ from typing import Any
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from log_utils import log, log_error
+from run_metadata import generate_run_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +69,9 @@ def normalize_rows(values: list[list[str]]) -> list[dict[str, Any]]:
 
 def main() -> int:
     log("Script start")
+    metadata = generate_run_metadata()
+    run_id = metadata["run_id"]
+    log(f"Run ID: {run_id}")
     args = parse_args()
     if args.limit < 0:
         log_error("--limit must be >= 0")
@@ -75,7 +79,7 @@ def main() -> int:
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     try:
-        log("Loading service account credentials")
+        log(f"[{run_id}] Loading service account credentials")
         creds = service_account.Credentials.from_service_account_file(
             args.service_account, scopes=scopes
         )
@@ -84,7 +88,7 @@ def main() -> int:
         return 1
 
     try:
-        log("Fetching sheet values")
+        log(f"[{run_id}] Fetching sheet values")
         service = build("sheets", "v4", credentials=creds)
         result = (
             service.spreadsheets()
@@ -102,14 +106,14 @@ def main() -> int:
         rows = rows[: args.limit]
 
     try:
-        log("Writing rows output")
+        log(f"[{run_id}] Writing rows output")
         with open(args.out, "w", encoding="utf-8") as handle:
             json.dump(rows, handle, indent=2, ensure_ascii=False)
     except Exception as exc:
         log_error(f"Failed to write output JSON: {exc}")
         return 1
 
-    log(f"Success: wrote {len(rows)} rows to {args.out}")
+    log(f"[{run_id}] Success: wrote {len(rows)} rows to {args.out}")
     return 0
 
 

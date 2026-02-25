@@ -30,6 +30,22 @@ jobs:
           test -n "$GOOGLE_SERVICE_ACCOUNT_KEY"
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > /tmp/gservice.json
 
+      - name: Generate run metadata
+        id: runmeta
+        run: |
+          RUN_ID=$(python - <<'PY'
+          import os
+          import sys
+          sys.path.append("scripts")
+          from run_metadata import generate_run_metadata, save_run_metadata
+
+          metadata = generate_run_metadata()
+          save_run_metadata("run_metadata.json", metadata)
+          print(metadata["run_id"])
+          PY
+          )
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
       - name: Fetch sheet rows
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
@@ -43,7 +59,7 @@ jobs:
       - name: Call AI provider
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          RUN_ID: ${{ github.run_id }}
+          RUN_ID: ${{ steps.runmeta.outputs.run_id }}
         run: |
           # TODO: Replace mock/placeholder logic in scripts/call_ai.py with your provider endpoint/model.
           # TODO: Keep provider credentials in GitHub Secrets only.
@@ -62,7 +78,7 @@ jobs:
       - name: Save weekly analysis
         run: |
           mkdir -p analyses
-          cp analysis.json "analyses/weekly-${{ github.run_id }}.json"
+          cp analysis.json "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
 
       - name: Commit weekly analysis
         env:
@@ -70,12 +86,12 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add "analyses/weekly-${{ github.run_id }}.json"
+          git add run_metadata.json "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m "chore: add weekly analysis ${{ github.run_id }}"
+          git commit -m "chore: add weekly analysis ${{ steps.runmeta.outputs.run_id }}"
           git push
 
       - name: Upload analysis artifact on failure

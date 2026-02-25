@@ -16,6 +16,7 @@ from pathlib import Path
 
 from jsonschema import ValidationError, validate
 from log_utils import log, log_error
+from run_metadata import generate_run_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,10 +35,13 @@ def write_error_file(message: str) -> None:
 
 def main() -> int:
     log("Script start")
+    metadata = generate_run_metadata()
+    run_id = metadata["run_id"]
+    log(f"Run ID: {run_id}")
     args = parse_args()
 
     try:
-        log("Loading schema and analysis files")
+        log(f"[{run_id}] Loading schema and analysis files")
         with open(args.schema, "r", encoding="utf-8") as fh:
             schema = json.load(fh)
         with open(args.input, "r", encoding="utf-8") as fh:
@@ -52,9 +56,9 @@ def main() -> int:
         return 1
 
     try:
-        log("Validating analysis against schema")
+        log(f"[{run_id}] Validating analysis against schema")
         validate(instance=analysis, schema=schema)
-        log("Schema validation passed")
+        log(f"[{run_id}] Schema validation passed")
         return 0
     except ValidationError as exc:
         message = f"Schema validation failed: {exc.message}"

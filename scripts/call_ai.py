@@ -18,6 +18,7 @@ from typing import Any
 
 import requests
 from log_utils import log, log_error
+from run_metadata import generate_run_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -134,7 +135,11 @@ def write_json(path: str, payload: Any) -> None:
 
 def main() -> int:
     log("Script start")
+    metadata = generate_run_metadata()
+    metadata_run_id = metadata["run_id"]
+    log(f"Run ID: {metadata_run_id}")
     args = parse_args()
+    effective_run_id = args.run_id or metadata_run_id
 
     try:
         log("Loading input rows")
@@ -147,7 +152,7 @@ def main() -> int:
         return 1
 
     log("Building prompt")
-    prompt = build_prompt(rows, args.run_id)
+    prompt = build_prompt(rows, effective_run_id)
 
     try:
         log("Calling AI provider")
@@ -187,7 +192,7 @@ def main() -> int:
         log_error("Failed to parse AI output as JSON")
         return 1
 
-    parsed["run_id"] = args.run_id
+    parsed["run_id"] = effective_run_id
 
     try:
         log("Writing analysis output")
@@ -196,7 +201,7 @@ def main() -> int:
         log_error(f"Failed to write output file: {exc}")
         return 1
 
-    log(f"Success: wrote analysis to {args.out}")
+    log(f"[{effective_run_id}] Success: wrote analysis to {args.out}")
     return 0
 
 
