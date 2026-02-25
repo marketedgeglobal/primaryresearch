@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from jsonschema import ValidationError, validate
+from log_utils import log, log_error
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,16 +33,18 @@ def write_error_file(message: str) -> None:
 
 
 def main() -> int:
+    log("Script start")
     args = parse_args()
 
     try:
+        log("Loading schema and analysis files")
         with open(args.schema, "r", encoding="utf-8") as fh:
             schema = json.load(fh)
         with open(args.input, "r", encoding="utf-8") as fh:
             analysis = json.load(fh)
     except Exception as exc:
         message = f"Failed to load input files: {exc}"
-        print(message, file=sys.stderr)
+        log_error(message)
         try:
             write_error_file(message)
         except Exception:
@@ -49,19 +52,20 @@ def main() -> int:
         return 1
 
     try:
+        log("Validating analysis against schema")
         validate(instance=analysis, schema=schema)
-        print("Schema validation passed")
+        log("Schema validation passed")
         return 0
     except ValidationError as exc:
         message = f"Schema validation failed: {exc.message}"
     except Exception as exc:
         message = f"Schema validation failed: {exc}"
 
-    print(message, file=sys.stderr)
+    log_error(message)
     try:
         write_error_file(message)
     except Exception as write_exc:
-        print(f"Also failed to write schema_validation_error.json: {write_exc}", file=sys.stderr)
+        log_error(f"Also failed to write schema_validation_error.json: {write_exc}")
     return 1
 
 

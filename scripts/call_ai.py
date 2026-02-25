@@ -17,6 +17,7 @@ import sys
 from typing import Any
 
 import requests
+from log_utils import log, log_error
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,23 +133,27 @@ def write_json(path: str, payload: Any) -> None:
 
 
 def main() -> int:
+    log("Script start")
     args = parse_args()
 
     try:
+        log("Loading input rows")
         with open(args.input, "r", encoding="utf-8") as fh:
             rows = json.load(fh)
         if not isinstance(rows, list):
             raise ValueError("input JSON must be an array of row objects")
     except Exception as exc:
-        print(f"Failed to read input rows: {exc}", file=sys.stderr)
+        log_error(f"Failed to read input rows: {exc}")
         return 1
 
+    log("Building prompt")
     prompt = build_prompt(rows, args.run_id)
 
     try:
+        log("Calling AI provider")
         raw = call_ai_provider(args.api_key, prompt)
     except Exception as exc:
-        print(f"AI provider call failed: {exc}", file=sys.stderr)
+        log_error(f"AI provider call failed: {exc}")
         return 1
 
     parsed: dict[str, Any] | None = None
@@ -174,22 +179,24 @@ def main() -> int:
             "raw": raw,
         }
         try:
+            log_error("AI response parsing failed; writing error payload")
             write_json(args.out, error_payload)
         except Exception as exc:
-            print(f"Failed to write output file: {exc}", file=sys.stderr)
+            log_error(f"Failed to write output file: {exc}")
             return 1
-        print("Failed to parse AI output as JSON", file=sys.stderr)
+        log_error("Failed to parse AI output as JSON")
         return 1
 
     parsed["run_id"] = args.run_id
 
     try:
+        log("Writing analysis output")
         write_json(args.out, parsed)
     except Exception as exc:
-        print(f"Failed to write output file: {exc}", file=sys.stderr)
+        log_error(f"Failed to write output file: {exc}")
         return 1
 
-    print(f"Wrote analysis to {args.out}")
+    log(f"Success: wrote analysis to {args.out}")
     return 0
 
 

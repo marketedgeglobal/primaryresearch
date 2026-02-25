@@ -15,6 +15,7 @@ from typing import Any
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from log_utils import log, log_error
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,21 +67,24 @@ def normalize_rows(values: list[list[str]]) -> list[dict[str, Any]]:
 
 
 def main() -> int:
+    log("Script start")
     args = parse_args()
     if args.limit < 0:
-        print("--limit must be >= 0", file=sys.stderr)
+        log_error("--limit must be >= 0")
         return 1
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     try:
+        log("Loading service account credentials")
         creds = service_account.Credentials.from_service_account_file(
             args.service_account, scopes=scopes
         )
     except Exception as exc:
-        print(f"Failed to load service account: {exc}", file=sys.stderr)
+        log_error(f"Failed to load service account: {exc}")
         return 1
 
     try:
+        log("Fetching sheet values")
         service = build("sheets", "v4", credentials=creds)
         result = (
             service.spreadsheets()
@@ -89,7 +93,7 @@ def main() -> int:
             .execute()
         )
     except Exception as exc:
-        print(f"Failed to fetch sheet values: {exc}", file=sys.stderr)
+        log_error(f"Failed to fetch sheet values: {exc}")
         return 1
 
     values = result.get("values", [])
@@ -98,13 +102,14 @@ def main() -> int:
         rows = rows[: args.limit]
 
     try:
+        log("Writing rows output")
         with open(args.out, "w", encoding="utf-8") as handle:
             json.dump(rows, handle, indent=2, ensure_ascii=False)
     except Exception as exc:
-        print(f"Failed to write output JSON: {exc}", file=sys.stderr)
+        log_error(f"Failed to write output JSON: {exc}")
         return 1
 
-    print(f"Wrote {len(rows)} rows to {args.out}")
+    log(f"Success: wrote {len(rows)} rows to {args.out}")
     return 0
 
 
