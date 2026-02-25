@@ -1,116 +1,164 @@
 #!/usr/bin/env python3
-"""Call an AI provider to produce analysis.json."""
+"""Build an AI analysis prompt from rows.json and write analysis.json.
+
+Usage:
+    python scripts/call_ai.py --input rows.json --run-id 12345 --api-key __MOCK__ --out analysis.json
+
+Suggested commit message: feat: add scripts/call_ai.py with prompt builder and mock provider
+"""
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Call an AI provider for analysis.")
-    parser.add_argument("--rows", default="rows.json", help="Rows JSON file.")
-    parser.add_argument("--output", default="analysis.json", help="Output JSON file.")
+    parser = argparse.ArgumentParser(description="Call an AI provider and write analysis JSON.")
+    parser.add_argument("--input", required=True, help="Path to rows.json")
+    parser.add_argument("--run-id", required=True, help="Run identifier")
+    parser.add_argument("--api-key", required=True, help='Provider API key or "__MOCK__"')
+    parser.add_argument("--out", required=True, help="Output JSON path")
     return parser.parse_args()
 
 
-def build_prompt(rows: List[Dict[str, Any]], run_id: str) -> str:
+def build_prompt(rows: list[dict[str, Any]], run_id: str) -> str:
+    rows_preview = rows[:200]
+    schema_description = {
+        "generated_utc": "string, UTC timestamp",
+        "run_id": "string, copied from input run_id",
+        "rows_read": "integer, total rows in input",
+        "rows_analyzed": "integer, rows actually analyzed",
+        "sheet_summary": "string, concise overall summary",
+        "top_tags": "array of strings, most common themes",
+        "counts_by_status": "object, status -> count",
+        "deadline_overview": "object, summary of upcoming/overdue deadlines",
+        "items": "array of objects with at least title and summary; optional row_id,tags,scores,priority,recommendation,notes",
+    }
+
     return (
-        "You are an analysis system. Return ONLY JSON that matches the schema.\n"
-        "Do not include markdown or commentary.\n\n"
-        f"Run ID: {run_id}\n"
-        "Rows:\n"
-        f"{json.dumps(rows, indent=2)}\n"
+        "You are a strict data analysis assistant. Return ONLY valid JSON.\n"
+        "No markdown, no code fences, no prose.\n"
+        f"run_id: {run_id}\n"
+        f"rows_total: {len(rows)}\n"
+        f"rows_included_in_prompt: {len(rows_preview)}\n\n"
+        "Required top-level keys:\n"
+        "generated_utc, run_id, rows_read, rows_analyzed, sheet_summary, "
+        "top_tags, counts_by_status, deadline_overview, items\n\n"
+        "Schema guide:\n"
+        f"{json.dumps(schema_description, ensure_ascii=False)}\n\n"
+        "Rows JSON:\n"
+        f"{json.dumps(rows_preview, ensure_ascii=False)}\n"
     )
 
 
 def call_ai_provider(api_key: str, prompt: str) -> str:
+    _ = prompt
     if api_key == "__MOCK__":
-        mock = {
-            "generated_utc": dt.datetime.utcnow().replace(microsecond=0).isoformat()
-            + "Z",
-            "run_id": os.environ.get("RUN_ID", "mock"),
-            "rows_read": 1,
-            "rows_analyzed": 1,
-            "sheet_summary": "Mock summary for local testing.",
+        mock_payload = {
+            "generated_utc": dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "run_id": "mock-run",
+            "rows_read": 2,
+            "rows_analyzed": 2,
+            "sheet_summary": "Local mock summary.",
+            "top_tags": ["risk", "follow-up"],
+            "counts_by_status": {"open": 1, "closed": 1},
+            "deadline_overview": {
+                "overdue_count": 0,
+                "due_7_days_count": 1,
+                "notes": "Mock deadline overview",
+            },
             "items": [
                 {
                     "title": "Mock item",
-                    "summary": "Mock summary item for schema validation.",
+                    "summary": "Mock summary for local validation.",
                     "priority": "medium",
                 }
             ],
         }
-        return json.dumps(mock, indent=2)
+        return json.dumps(mock_payload, ensure_ascii=False)
 
     raise RuntimeError(
-        "TODO: Implement provider-specific API call. Set AI_API_KEY or use __MOCK__."
+        "TODO: Implement real provider call in call_ai_provider(api_key, prompt), including endpoint, "
+        "headers, model, timeout, and retry handling for your AI service."
     )
 
 
-def extract_json(text: str) -> str:
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fenced:
-        return fenced.group(1)
-
-    brace_start = text.find("{")
-    brace_end = text.rfind("}")
-    if brace_start == -1 or brace_end == -1 or brace_end <= brace_start:
-        raise ValueError("No JSON object found in AI response")
-    return text[brace_start : brace_end + 1]
+def extract_json_from_fence(raw: str) -> str | None:
+    match = re.search(r"```json\s*(\{.*?\})\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if not match:
+        match = re.search(r"```\s*(\{.*?\})\s*```", raw, flags=re.DOTALL)
+    return match.group(1) if match else None
 
 
-def load_rows(path: str) -> List[Dict[str, Any]]:
-    with open(path, "r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def ensure_run_id() -> str:
-    return (
-        os.environ.get("RUN_ID")
-        or os.environ.get("GITHUB_RUN_ID")
-        or dt.datetime.utcnow().strftime("local-%Y%m%d%H%M%S")
-    )
+def write_json(path: str, payload: Any) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, ensure_ascii=False)
 
 
 def main() -> int:
     args = parse_args()
-    api_key = (os.environ.get("AI_API_KEY") or "").strip()
-    if not api_key:
-        print("Missing AI_API_KEY", file=sys.stderr)
-        return 1
 
     try:
-        rows = load_rows(args.rows)
+        with open(args.input, "r", encoding="utf-8") as fh:
+            rows = json.load(fh)
+        if not isinstance(rows, list):
+            raise ValueError("input JSON must be an array of row objects")
     except Exception as exc:
-        print(f"Failed to load rows: {exc}", file=sys.stderr)
+        print(f"Failed to read input rows: {exc}", file=sys.stderr)
         return 1
 
-    run_id = ensure_run_id()
-    prompt = build_prompt(rows, run_id)
+    prompt = build_prompt(rows, args.run_id)
 
     try:
-        raw_response = call_ai_provider(api_key, prompt)
-        json_payload = extract_json(raw_response)
-        analysis = json.loads(json_payload)
+        raw = call_ai_provider(args.api_key, prompt)
     except Exception as exc:
-        print(f"AI response parsing failed: {exc}", file=sys.stderr)
+        print(f"AI provider call failed: {exc}", file=sys.stderr)
         return 1
 
-    analysis["run_id"] = run_id
-    analysis.setdefault("generated_utc", dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z")
-    analysis.setdefault("rows_read", len(rows))
-    analysis.setdefault("rows_analyzed", len(rows))
+    parsed: dict[str, Any] | None = None
+    try:
+        loaded = json.loads(raw)
+        if isinstance(loaded, dict):
+            parsed = loaded
+        else:
+            raise ValueError("AI output is not a JSON object")
+    except Exception:
+        fenced = extract_json_from_fence(raw)
+        if fenced:
+            try:
+                loaded = json.loads(fenced)
+                if isinstance(loaded, dict):
+                    parsed = loaded
+            except Exception:
+                parsed = None
 
-    with open(args.output, "w", encoding="utf-8") as handle:
-        json.dump(analysis, handle, indent=2)
+    if parsed is None:
+        error_payload = {
+            "error": "Could not parse AI response as JSON object",
+            "raw": raw,
+        }
+        try:
+            write_json(args.out, error_payload)
+        except Exception as exc:
+            print(f"Failed to write output file: {exc}", file=sys.stderr)
+            return 1
+        print("Failed to parse AI output as JSON", file=sys.stderr)
+        return 1
 
-    print(f"Wrote analysis to {args.output}")
+    parsed["run_id"] = args.run_id
+
+    try:
+        write_json(args.out, parsed)
+    except Exception as exc:
+        print(f"Failed to write output file: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Wrote analysis to {args.out}")
     return 0
 
 
