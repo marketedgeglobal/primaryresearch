@@ -1,0 +1,75 @@
+name: Weekly Analysis
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "0 9 * * 1"
+
+jobs:
+  weekly-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write service account key
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          set -e
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_KEY" ]; then
+            echo "Missing GOOGLE_SERVICE_ACCOUNT_KEY secret"
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICE_ACCOUNT_KEY" > /tmp/gservice.json
+
+      - name: Fetch sheet rows
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/fetch_sheet.py --service-account /tmp/gservice.json --output rows.json
+
+      - name: Call AI provider
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          RUN_ID: ${{ github.run_id }}
+        run: python scripts/call_ai.py --rows rows.json --output analysis.json
+
+      - name: Validate schema
+        run: python scripts/validate_schema.py --analysis analysis.json --schema schemas/analysis_schema.json
+
+      - name: Store analysis
+        run: |
+          mkdir -p analyses
+          cp analysis.json "analyses/weekly-${{ github.run_id }}.json"
+
+      - name: Commit analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "analyses/weekly-${{ github.run_id }}.json"
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: add weekly analysis ${{ github.run_id }}"
+          git push
+
+      - name: Upload failure artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-output
+          path: analysis.json
