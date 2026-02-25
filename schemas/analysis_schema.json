@@ -1,5 +1,6 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Weekly Analysis Output",
   "type": "object",
   "required": [
     "generated_utc",
@@ -10,29 +11,110 @@
     "items"
   ],
   "properties": {
-    "generated_utc": {"type": "string"},
-    "run_id": {"type": "string"},
-    "rows_read": {"type": "integer", "minimum": 0},
-    "rows_analyzed": {"type": "integer", "minimum": 0},
-    "sheet_summary": {"type": "string"},
+    "generated_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "rows_read": {
+      "type": "integer"
+    },
+    "rows_analyzed": {
+      "type": "integer"
+    },
+    "sheet_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "top_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "counts_by_status": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "number",
+          "string",
+          "boolean",
+          "null"
+        ]
+      }
+    },
+    "deadline_overview": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "number",
+          "string",
+          "boolean",
+          "null"
+        ]
+      }
+    },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["title", "summary"],
+        "required": [
+          "title",
+          "summary"
+        ],
         "properties": {
-          "title": {"type": "string"},
-          "summary": {"type": "string"},
-          "row_id": {"type": "string"},
-          "tags": {"type": "array", "items": {"type": "string"}},
-          "scores": {"type": "object"},
-          "priority": {"type": "string"},
-          "recommendation": {"type": "string"},
-          "notes": {"type": "string"}
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "row_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "integer",
+                "number",
+                "string",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "priority": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false,
+  "description": "Suggested commit message: chore: add analysis_schema.json for validating AI output"
 }
