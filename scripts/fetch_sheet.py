@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Fetch rows from a Google Sheet and write rows.json."""
+"""Read a Google Sheet range and write rows as JSON objects.
+
+Usage:
+    python scripts/fetch_sheet.py --service-account /path/key.json \
+        --spreadsheet-id <ID> --range 'Sheet1!A1:Z' --out rows.json [--limit 100]
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -17,42 +21,42 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch rows from a Google Sheet.")
     parser.add_argument(
         "--service-account",
-        default="/tmp/gservice.json",
+        required=True,
         help="Path to service account JSON file.",
     )
     parser.add_argument(
         "--spreadsheet-id",
-        default=None,
-        help="Spreadsheet ID (defaults to SPREADSHEET_ID env var).",
+        required=True,
+        help="Spreadsheet ID.",
     )
     parser.add_argument(
         "--range",
         dest="range_name",
-        default="Sheet1!A1:Z",
+        required=True,
         help="Sheet range to read.",
+    )
+    parser.add_argument(
+        "--out",
+        required=True,
+        help="Output JSON file path.",
     )
     parser.add_argument(
         "--limit",
         type=int,
-        default=None,
-        help="Maximum number of rows to return.",
-    )
-    parser.add_argument(
-        "--output",
-        default="rows.json",
-        help="Output JSON file.",
+        default=0,
+        help="Maximum number of data rows to include; 0 means no limit.",
     )
     return parser.parse_args()
 
 
-def normalize_rows(values: List[List[str]]) -> List[Dict[str, Any]]:
+def normalize_rows(values: list[list[str]]) -> list[dict[str, Any]]:
     if not values:
         return []
 
     header = values[0]
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for raw_row in values[1:]:
-        item: Dict[str, Any] = {}
+        item: dict[str, Any] = {}
         for idx, key in enumerate(header):
             if not key:
                 continue
@@ -63,11 +67,8 @@ def normalize_rows(values: List[List[str]]) -> List[Dict[str, Any]]:
 
 def main() -> int:
     args = parse_args()
-    spreadsheet_id = args.spreadsheet_id or ""
-    if not spreadsheet_id:
-        spreadsheet_id = (os.environ.get("SPREADSHEET_ID") or "").strip()
-    if not spreadsheet_id:
-        print("Missing SPREADSHEET_ID (arg or env)", file=sys.stderr)
+    if args.limit < 0:
+        print("--limit must be >= 0", file=sys.stderr)
         return 1
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -84,7 +85,7 @@ def main() -> int:
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=spreadsheet_id, range=args.range_name)
+            .get(spreadsheetId=args.spreadsheet_id, range=args.range_name)
             .execute()
         )
     except Exception as exc:
@@ -93,13 +94,17 @@ def main() -> int:
 
     values = result.get("values", [])
     rows = normalize_rows(values)
-    if args.limit is not None:
+    if args.limit > 0:
         rows = rows[: args.limit]
 
-    with open(args.output, "w", encoding="utf-8") as handle:
-        json.dump(rows, handle, indent=2)
+    try:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            json.dump(rows, handle, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        print(f"Failed to write output JSON: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"Wrote {len(rows)} rows to {args.output}")
+    print(f"Wrote {len(rows)} rows to {args.out}")
     return 0
 
 
