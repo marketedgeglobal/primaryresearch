@@ -14,9 +14,23 @@ Last updated: {{timestamp}}
 
 {{opportunities_section}}
 
-## Trend Charts
+## Weekly Trends
 
-{{trends_section}}
+### Trend Charts
+
+{{weekly_trend_charts}}
+
+### Week-over-Week Deltas
+
+{{weekly_deltas}}
+
+### Top Rising Themes
+
+{{rising_themes}}
+
+### Top Falling Themes
+
+{{falling_themes}}
 
 ## Full Summary
 

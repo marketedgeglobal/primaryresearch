@@ -147,9 +147,16 @@ jobs:
           history_path.write_text("\n".join(output_lines).rstrip() + "\n", encoding="utf-8")
           PY
 
-          HISTORICAL_COUNT=$(find analyses -maxdepth 1 -name 'weekly-*.json' | wc -l | tr -d '[:space:]')
+          HISTORICAL_COUNT=$(find analyses -maxdepth 1 \( -name 'weekly-*.json' -o -name 'analysis-*.json' \) | wc -l | tr -d '[:space:]')
           if [ "${HISTORICAL_COUNT}" -gt 0 ]; then
-            python scripts/charting.py --analyses-dir analyses --charts-dir docs/charts
+            python scripts/trend_analysis.py \
+              --analyses-dir analyses \
+              --output docs/trend_data.json
+
+            python scripts/charting.py \
+              --analyses-dir analyses \
+              --charts-dir docs/charts \
+              --trend-data docs/trend_data.json
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -160,6 +167,7 @@ jobs:
             --analyses-dir analyses \
             --docs-dir docs \
             --metadata run_metadata.json \
+            --trend-data docs/trend_data.json \
             --partners-dir docs/partners \
             --output docs/index.md
 
@@ -211,4 +219,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add interactive filtering and multi-partner dashboards to GitHub Pages
+# Suggested commit message: feat: add trend analytics and multi-run comparisons to dashboard

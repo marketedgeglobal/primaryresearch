@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional chart generation for dashboard trend visualization."""
+"""Chart generation utilities for trend analytics visualizations."""
 
 from __future__ import annotations
 
@@ -9,60 +9,35 @@ from pathlib import Path
 from typing import Any
 
 from log_utils import log
+from trend_analysis import build_trend_data
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_historical_analyses(analyses_dir: Path = Path("analyses")) -> list[dict[str, Any]]:
-    log(f"Loading historical analyses from {analyses_dir}")
-    files = sorted(analyses_dir.glob("weekly-*.json"), key=lambda p: p.name)
-    analyses = []
-    for file_path in files:
-        try:
-            analyses.append(_load_json(file_path))
-        except Exception as exc:
-            log(f"Skipping unreadable analysis file {file_path}: {exc}")
-    log(f"Loaded {len(analyses)} historical analysis files")
-    return analyses
+def _extract_labels(runs: list[dict[str, Any]]) -> list[str]:
+    return [str(run.get("run_id") or "unknown") for run in runs]
 
 
-def _extract_run_label(analysis: dict[str, Any]) -> str:
-    run_id = str(analysis.get("run_id") or "")
-    if run_id.startswith("run-"):
-        return run_id.replace("run-", "")
-    return run_id or "unknown"
+def _to_markdown_image(path: Path, title: str) -> str:
+    return f"![{title}]({path.as_posix()})"
 
 
-def _extract_average_score(analysis: dict[str, Any]) -> float:
-    ranked = analysis.get("ranked_opportunities") if isinstance(analysis.get("ranked_opportunities"), list) else []
-    scores = []
-    for item in ranked:
-        if not isinstance(item, dict):
-            continue
-        scores.append(float(item.get("score") or 0.0))
-    if scores:
-        return sum(scores) / len(scores)
-
-    clusters = analysis.get("clusters") if isinstance(analysis.get("clusters"), list) else []
-    cluster_scores = []
-    for cluster in clusters:
-        if not isinstance(cluster, dict):
-            continue
-        opportunities = cluster.get("opportunities") if isinstance(cluster.get("opportunities"), list) else []
-        for opportunity in opportunities:
-            if isinstance(opportunity, dict):
-                cluster_scores.append(float(opportunity.get("score") or 0.0))
-    return (sum(cluster_scores) / len(cluster_scores)) if cluster_scores else 0.0
+def _save_chart(fig: Any, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    fig.clf()
 
 
-def generate_charts(
-    analyses: list[dict[str, Any]],
+def generate_score_trend_line_chart(
+    trend_data: dict[str, Any],
     charts_dir: Path = Path("docs/charts"),
 ) -> str:
-    if not analyses:
-        log("No historical data exists; skipping chart generation")
+    runs = trend_data.get("runs") if isinstance(trend_data.get("runs"), list) else []
+    if not runs:
+        log("No runs in trend data; skipping score trend chart")
         return ""
 
     try:
@@ -74,56 +49,155 @@ def generate_charts(
         log(f"matplotlib not available; skipping chart generation: {exc}")
         return ""
 
-    charts_dir.mkdir(parents=True, exist_ok=True)
-    log(f"Generating charts into {charts_dir}")
+    labels = _extract_labels(runs)
+    values = [float(run.get("average_score") or 0.0) for run in runs]
 
-    labels = [_extract_run_label(analysis) for analysis in analyses]
-    rows_analyzed = [int(analysis.get("rows_analyzed") or 0) for analysis in analyses]
-    avg_scores = [_extract_average_score(analysis) for analysis in analyses]
+    fig = plt.figure(figsize=(10, 4))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(labels, values, marker="o")
+    ax.set_title("Average Opportunity Score Trend")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Average Score")
+    ax.tick_params(axis="x", labelrotation=45)
 
-    paths: list[Path] = []
+    output_path = charts_dir / "score_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(output_path, "Score Trend")
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(labels, rows_analyzed, marker="o")
-    plt.title("Rows Analyzed per Run")
-    plt.xlabel("Run")
-    plt.ylabel("Rows Analyzed")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-    rows_path = charts_dir / "rows_analyzed_trend.png"
-    plt.savefig(rows_path, dpi=120)
-    plt.close()
-    paths.append(rows_path)
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(labels, avg_scores, marker="o")
-    plt.title("Average Opportunity Score per Run")
-    plt.xlabel("Run")
-    plt.ylabel("Average Score")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-    avg_path = charts_dir / "avg_opportunity_score_trend.png"
-    plt.savefig(avg_path, dpi=120)
-    plt.close()
-    paths.append(avg_path)
+def generate_theme_count_line_chart(
+    trend_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts"),
+) -> str:
+    runs = trend_data.get("runs") if isinstance(trend_data.get("runs"), list) else []
+    if not runs:
+        log("No runs in trend data; skipping theme count chart")
+        return ""
 
-    markdown = "\n\n".join(f"![{path.stem}]({path.as_posix()})" for path in paths)
-    log(f"Generated {len(paths)} chart(s)")
-    return markdown
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping theme count chart: {exc}")
+        return ""
+
+    labels = _extract_labels(runs)
+    values = [int(run.get("theme_count") or 0) for run in runs]
+
+    fig = plt.figure(figsize=(10, 4))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(labels, values, marker="o")
+    ax.set_title("Theme Count Trend")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Theme Count")
+    ax.tick_params(axis="x", labelrotation=45)
+
+    output_path = charts_dir / "theme_count_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(output_path, "Theme Count Trend")
+
+
+def generate_partner_stacked_bar_chart(
+    trend_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts"),
+    max_partners: int = 6,
+) -> str:
+    runs = trend_data.get("runs") if isinstance(trend_data.get("runs"), list) else []
+    if not runs:
+        log("No runs in trend data; skipping partner stacked bar chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping partner chart: {exc}")
+        return ""
+
+    partner_totals: dict[str, int] = {}
+    for run in runs:
+        partner_counts = run.get("per_partner_counts")
+        if not isinstance(partner_counts, dict):
+            continue
+        for partner, count in partner_counts.items():
+            partner_name = str(partner)
+            partner_totals[partner_name] = partner_totals.get(partner_name, 0) + int(count or 0)
+
+    if not partner_totals:
+        log("No partner fields found in trend data; skipping partner stacked bar chart")
+        return ""
+
+    selected_partners = [
+        partner for partner, _ in sorted(partner_totals.items(), key=lambda item: (-item[1], item[0]))[:max_partners]
+    ]
+    labels = _extract_labels(runs)
+
+    fig = plt.figure(figsize=(11, 4.5))
+    ax = fig.add_subplot(1, 1, 1)
+    bottoms = [0] * len(runs)
+
+    for partner in selected_partners:
+        values = []
+        for run in runs:
+            partner_counts = run.get("per_partner_counts") if isinstance(run.get("per_partner_counts"), dict) else {}
+            values.append(int(partner_counts.get(partner, 0) or 0))
+        ax.bar(labels, values, bottom=bottoms, label=partner)
+        bottoms = [bottoms[index] + values[index] for index in range(len(values))]
+
+    ax.set_title("Partner Opportunity Mix by Run")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Opportunity Count")
+    ax.tick_params(axis="x", labelrotation=45)
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0)
+
+    output_path = charts_dir / "partner_stacked_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(output_path, "Partner Trend")
+
+
+def generate_trend_charts(
+    trend_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts"),
+) -> str:
+    charts = [
+        generate_score_trend_line_chart(trend_data=trend_data, charts_dir=charts_dir),
+        generate_theme_count_line_chart(trend_data=trend_data, charts_dir=charts_dir),
+        generate_partner_stacked_bar_chart(trend_data=trend_data, charts_dir=charts_dir),
+    ]
+    valid = [chart for chart in charts if chart]
+    return "\n\n".join(valid)
 
 
 def generate_chart_markdown(
     analyses_dir: Path = Path("analyses"),
     charts_dir: Path = Path("docs/charts"),
+    trend_data_path: Path | None = None,
 ) -> str:
-    analyses = load_historical_analyses(analyses_dir=analyses_dir)
-    return generate_charts(analyses=analyses, charts_dir=charts_dir)
+    if trend_data_path and trend_data_path.exists():
+        trend_data = _load_json(trend_data_path)
+        log(f"Loaded trend data from {trend_data_path}")
+    else:
+        trend_data = build_trend_data(analyses_dir=analyses_dir)
+    markdown = generate_trend_charts(trend_data=trend_data, charts_dir=charts_dir)
+    if markdown:
+        log("Generated trend chart markdown for embedding")
+    else:
+        log("No trend chart markdown generated")
+    return markdown
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate optional dashboard charts from historical analyses")
-    parser.add_argument("--analyses-dir", default="analyses", help="Directory containing weekly analysis JSON files")
+    parser = argparse.ArgumentParser(description="Generate trend charts from historical analyses")
+    parser.add_argument("--analyses-dir", default="analyses", help="Directory containing analysis JSON files")
     parser.add_argument("--charts-dir", default="docs/charts", help="Directory to write generated PNG charts")
+    parser.add_argument("--trend-data", default="", help="Optional precomputed trend data JSON path")
     return parser.parse_args()
 
 
@@ -132,11 +206,10 @@ def main() -> None:
     markdown = generate_chart_markdown(
         analyses_dir=Path(args.analyses_dir),
         charts_dir=Path(args.charts_dir),
+        trend_data_path=Path(args.trend_data) if args.trend_data else None,
     )
     if markdown:
-        log("Chart markdown generated for embedding")
-    else:
-        log("No chart markdown generated")
+        print(markdown)
 
 
 if __name__ == "__main__":

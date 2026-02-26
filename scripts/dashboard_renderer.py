@@ -11,7 +11,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from charting import generate_trend_charts
 from log_utils import log
+from trend_analysis import build_trend_data
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -248,17 +250,48 @@ def _build_opportunity_cards(ranked_opportunities: list[dict[str, Any]], run_id:
     return "\n".join(lines)
 
 
-def _build_trends_section(docs_dir: Path) -> str:
-    charts_dir = docs_dir / "charts"
-    if not charts_dir.exists():
-        return ""
+def _format_delta_line(label: str, payload: dict[str, Any], *, precision: int = 2) -> str:
+    current = float(payload.get("current") or 0.0)
+    previous = float(payload.get("previous") or 0.0)
+    delta = float(payload.get("delta") or 0.0)
+    sign = "+" if delta > 0 else ""
+    return (
+        f"- **{label}**: {current:.{precision}f} "
+        f"(prev: {previous:.{precision}f}, Δ: {sign}{delta:.{precision}f})"
+    )
 
-    chart_files = sorted(charts_dir.glob("*.png"))
-    if not chart_files:
-        return ""
 
-    lines = [f"![{chart.stem}]({chart.as_posix()})" for chart in chart_files]
-    return "\n\n".join(lines)
+def _build_weekly_deltas_section(trend_data: dict[str, Any]) -> str:
+    deltas = trend_data.get("deltas") if isinstance(trend_data.get("deltas"), dict) else {}
+    average_score = deltas.get("average_score") if isinstance(deltas.get("average_score"), dict) else {}
+    theme_count = deltas.get("theme_count") if isinstance(deltas.get("theme_count"), dict) else {}
+
+    if not average_score and not theme_count:
+        return "- Not enough historical runs for week-over-week deltas yet."
+
+    lines = []
+    if average_score:
+        lines.append(_format_delta_line("Average opportunity score", average_score, precision=2))
+    if theme_count:
+        lines.append(_format_delta_line("Theme count", theme_count, precision=0))
+    return "\n".join(lines)
+
+
+def _build_theme_delta_list(trend_data: dict[str, Any], key: str, empty_message: str) -> str:
+    deltas = trend_data.get("deltas") if isinstance(trend_data.get("deltas"), dict) else {}
+    entries = deltas.get(key) if isinstance(deltas.get(key), list) else []
+    if not entries:
+        return f"- {empty_message}"
+
+    lines: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        theme = str(entry.get("theme") or "Uncategorized")
+        delta = int(entry.get("delta") or 0)
+        sign = "+" if delta > 0 else ""
+        lines.append(f"- {theme} ({sign}{delta})")
+    return "\n".join(lines) if lines else f"- {empty_message}"
 
 
 def _build_partner_themes(opportunities: list[dict[str, Any]]) -> str:
@@ -288,6 +321,7 @@ def _render_partner_dashboards(
     partner_template_path: Path,
     partners_dir: Path,
     run_id: str,
+    trend_charts_markdown: str,
 ) -> list[tuple[str, str]]:
     if not partner_template_path.exists():
         raise FileNotFoundError(f"Missing partner template: {partner_template_path}")
@@ -303,7 +337,7 @@ def _render_partner_dashboards(
     for existing_file in partners_dir.glob("*.md"):
         existing_file.unlink()
 
-    trends_section = _build_trends_section(docs_dir) or "- No trend charts available."
+    trends_section = trend_charts_markdown or "- No trend charts available."
     history_links = _extract_history_links(history_markdown)
 
     used_slugs: set[str] = set()
@@ -346,6 +380,8 @@ def fill_template_placeholders(
     template_text: str,
     inputs: dict[str, Any],
     partner_links: str,
+    trend_data: dict[str, Any],
+    trend_charts_markdown: str,
     docs_dir: Path = Path("docs"),
 ) -> str:
     log("Filling dashboard template placeholders")
@@ -358,10 +394,20 @@ def fill_template_placeholders(
     timestamp = str(metadata.get("generated_utc") or analysis.get("generated_utc") or "")
     themes_section = _build_themes_section(analysis)
     opportunities_section = _build_opportunity_cards(ranked_opportunities, run_id)
-    trends_section = _build_trends_section(docs_dir)
     full_summary = str(inputs["summary_markdown"]).strip()
     history_links = _extract_history_links(str(inputs["history_markdown"]))
     filter_controls = _build_filter_controls(ranked_opportunities)
+    weekly_deltas = _build_weekly_deltas_section(trend_data)
+    rising_themes = _build_theme_delta_list(
+        trend_data,
+        key="top_rising_themes",
+        empty_message="No rising themes this week.",
+    )
+    falling_themes = _build_theme_delta_list(
+        trend_data,
+        key="top_falling_themes",
+        empty_message="No falling themes this week.",
+    )
 
     replacements = {
         "{{timestamp}}": timestamp,
@@ -369,7 +415,10 @@ def fill_template_placeholders(
         "{{filter_controls}}": filter_controls,
         "{{themes_section}}": themes_section,
         "{{opportunities_section}}": opportunities_section,
-        "{{trends_section}}": trends_section,
+        "{{weekly_trend_charts}}": trend_charts_markdown,
+        "{{weekly_deltas}}": weekly_deltas,
+        "{{rising_themes}}": rising_themes,
+        "{{falling_themes}}": falling_themes,
         "{{full_summary}}": full_summary,
         "{{history_links}}": history_links,
     }
@@ -393,6 +442,7 @@ def render_dashboard(
     analyses_dir: Path = Path("analyses"),
     docs_dir: Path = Path("docs"),
     metadata_path: Path = Path("run_metadata.json"),
+    trend_data_path: Path | None = None,
     partners_dir: Path = Path("docs/partners"),
     output_path: Path = Path("docs/index.md"),
 ) -> Path:
@@ -406,6 +456,17 @@ def render_dashboard(
     analysis = inputs["analysis"]
     run_id = str(metadata.get("run_id") or analysis.get("run_id") or "")
 
+    if trend_data_path and trend_data_path.exists():
+        trend_data = _load_json(trend_data_path)
+        log(f"Loaded precomputed trend data from {trend_data_path}")
+    else:
+        trend_data = build_trend_data(analyses_dir=analyses_dir)
+
+    trend_charts_markdown = generate_trend_charts(
+        trend_data=trend_data,
+        charts_dir=docs_dir / "charts",
+    )
+
     partner_pages = _render_partner_dashboards(
         analysis=analysis,
         history_markdown=str(inputs["history_markdown"]),
@@ -413,10 +474,18 @@ def render_dashboard(
         partner_template_path=partner_template_path,
         partners_dir=partners_dir,
         run_id=run_id,
+        trend_charts_markdown=trend_charts_markdown,
     )
     partner_links = _build_partner_links(partner_pages)
 
-    rendered = fill_template_placeholders(template_text, inputs, partner_links=partner_links, docs_dir=docs_dir)
+    rendered = fill_template_placeholders(
+        template_text,
+        inputs,
+        partner_links=partner_links,
+        trend_data=trend_data,
+        trend_charts_markdown=trend_charts_markdown,
+        docs_dir=docs_dir,
+    )
     return write_rendered_dashboard(rendered, output_path=output_path)
 
 
@@ -427,6 +496,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--analyses-dir", default="analyses", help="Directory containing weekly analysis JSON files")
     parser.add_argument("--docs-dir", default="docs", help="Directory containing docs files")
     parser.add_argument("--metadata", default="run_metadata.json", help="Path to run metadata JSON")
+    parser.add_argument("--trend-data", default="", help="Optional path to precomputed trend data JSON")
     parser.add_argument("--partners-dir", default="docs/partners", help="Output directory for partner markdown pages")
     parser.add_argument("--output", default="docs/index.md", help="Output path for rendered dashboard markdown")
     return parser.parse_args()
@@ -440,6 +510,7 @@ def main() -> None:
         analyses_dir=Path(args.analyses_dir),
         docs_dir=Path(args.docs_dir),
         metadata_path=Path(args.metadata),
+        trend_data_path=Path(args.trend_data) if args.trend_data else None,
         partners_dir=Path(args.partners_dir),
         output_path=Path(args.output),
     )
