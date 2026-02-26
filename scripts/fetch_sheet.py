@@ -3,20 +3,20 @@
 
 Usage:
     python scripts/fetch_sheet.py --service-account /path/key.json \
-        --spreadsheet-id <ID> --range 'Sheet1!A1:Z' --out rows.json [--limit 100]
+    --spreadsheet-id <ID> --range 'Sheet1!A1:Z' --output-dir analyses [--limit 100]
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 from typing import Any
 
 from config import load_config
 from errors import PipelineError, handle_exception, safe_run
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from log_utils import log, log_error
+from log_utils import log
+from output_writer import write_rows_output
 from run_metadata import generate_run_metadata
 
 
@@ -38,11 +38,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Sheet range to read.",
     )
-    parser.add_argument(
-        "--out",
-        required=True,
-        help="Output JSON file path.",
-    )
+    parser.add_argument("--run-id", default=None, help="Run identifier override")
+    parser.add_argument("--output-dir", default=None, help="Output directory for generated files")
     parser.add_argument(
         "--limit",
         type=int,
@@ -72,9 +69,10 @@ def normalize_rows(values: list[list[str]]) -> list[dict[str, Any]]:
 def main() -> None:
     log("Script start")
     metadata = generate_run_metadata()
-    run_id = metadata["run_id"]
-    log(f"Run ID: {run_id}")
+    metadata_run_id = metadata["run_id"]
     args = parse_args()
+    run_id = args.run_id or metadata_run_id
+    log(f"Run ID: {run_id}")
 
     try:
         cfg = load_config(
@@ -82,6 +80,7 @@ def main() -> None:
                 "spreadsheet_id": args.spreadsheet_id,
                 "service_account_path": args.service_account,
                 "range": args.range_name,
+                "output_dir": args.output_dir,
             }
         )
     except Exception as exc:
@@ -120,12 +119,11 @@ def main() -> None:
 
     try:
         log(f"[{run_id}] Writing rows output")
-        with open(args.out, "w", encoding="utf-8") as handle:
-            json.dump(rows, handle, indent=2, ensure_ascii=False)
+        output_path = write_rows_output(run_id, rows, cfg["output_dir"])
     except Exception as exc:
         raise PipelineError("Failed to write rows output")
 
-    log(f"[{run_id}] Success: wrote {len(rows)} rows to {args.out}")
+    log(f"[{run_id}] Success: wrote {len(rows)} rows to {output_path}")
     _ = handle_exception
 
 

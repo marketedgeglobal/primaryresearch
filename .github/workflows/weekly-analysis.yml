@@ -57,9 +57,12 @@ jobs:
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Fetch sheet rows
+        env:
+          RUN_ID: ${{ steps.runmeta.outputs.run_id }}
         run: |
           python scripts/fetch_sheet.py \
-            --out rows.json
+            --run-id "$RUN_ID" \
+            --output-dir "$OUTPUT_DIR"
 
       - name: Call AI provider
         env:
@@ -68,20 +71,24 @@ jobs:
           # TODO: Replace mock/placeholder logic in scripts/call_ai.py with your provider endpoint/model.
           # TODO: Keep provider credentials in GitHub Secrets only.
           python scripts/call_ai.py \
-            --input rows.json \
+            --input "$OUTPUT_DIR/rows-$RUN_ID.json" \
             --run-id "$RUN_ID" \
-            --out analysis.json
+            --output-dir "$OUTPUT_DIR"
 
       - name: Validate analysis schema
+        env:
+          RUN_ID: ${{ steps.runmeta.outputs.run_id }}
         run: |
           python scripts/validate_schema.py \
             --schema schemas/analysis_schema.json \
-            --input analysis.json
+            --input "$OUTPUT_DIR/analysis-$RUN_ID.json" \
+            --run-id "$RUN_ID" \
+            --output-dir "$OUTPUT_DIR"
 
       - name: Save weekly analysis
         run: |
           mkdir -p analyses
-          cp analysis.json "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
+          cp "$OUTPUT_DIR/analysis-${{ steps.runmeta.outputs.run_id }}.json" "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
 
       - name: Commit weekly analysis
         env:
@@ -103,7 +110,9 @@ jobs:
         with:
           name: pipeline-failure-artifacts
           path: |
-            analysis.json
+            analyses/analysis-*.json
+            analyses/rows-*.json
+            analyses/error-*.json
             pipeline_error.json
           if-no-files-found: ignore
 

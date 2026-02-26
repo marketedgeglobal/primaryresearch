@@ -2,7 +2,7 @@
 """Build an AI analysis prompt from rows.json and write analysis.json.
 
 Usage:
-    python scripts/call_ai.py --input rows.json --run-id 12345 --api-key __MOCK__ --out analysis.json
+    python scripts/call_ai.py --input analyses/rows-run-1234.json --run-id run-1234 --api-key __MOCK__ --output-dir analyses
 
 Suggested commit message: feat: add OpenAI provider integration to call_ai.py
 """
@@ -19,18 +19,19 @@ import requests
 from config import load_config
 from errors import PipelineError, handle_exception, safe_run
 from log_utils import log, log_error
+from output_writer import write_analysis_output, write_error_output
 from run_metadata import generate_run_metadata
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Call an AI provider and write analysis JSON.")
     parser.add_argument("--input", required=True, help="Path to rows.json")
-    parser.add_argument("--run-id", required=True, help="Run identifier")
+    parser.add_argument("--run-id", default=None, help="Run identifier")
     parser.add_argument("--api-key", default=None, help='Provider API key or "__MOCK__"')
     parser.add_argument("--provider", default=None, help="AI provider (openai or mock)")
     parser.add_argument("--model", default=None, help="AI model name")
     parser.add_argument("--timeout-seconds", type=int, default=None, help="AI request timeout in seconds")
-    parser.add_argument("--out", required=True, help="Output JSON path")
+    parser.add_argument("--output-dir", default=None, help="Output directory for generated files")
     return parser.parse_args()
 
 
@@ -132,11 +133,6 @@ def extract_json_from_fence(raw: str) -> str | None:
     return match.group(1) if match else None
 
 
-def write_json(path: str, payload: Any) -> None:
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
-
-
 @safe_run
 def main() -> None:
     log("Script start")
@@ -152,6 +148,7 @@ def main() -> None:
                 "api_key": args.api_key,
                 "model": args.model,
                 "timeout_seconds": args.timeout_seconds,
+                "output_dir": args.output_dir,
             }
         )
     except Exception as exc:
@@ -208,7 +205,8 @@ def main() -> None:
         }
         try:
             log_error("AI response parsing failed; writing error payload")
-            write_json(args.out, error_payload)
+            error_path = write_error_output(effective_run_id, error_payload, cfg["output_dir"])
+            log(f"[{effective_run_id}] Wrote error output: {error_path}")
         except Exception as exc:
             raise PipelineError("Failed to write AI parse-error output")
         raise PipelineError("Failed to parse AI output as JSON")
@@ -217,11 +215,11 @@ def main() -> None:
 
     try:
         log("Writing analysis output")
-        write_json(args.out, parsed)
+        output_path = write_analysis_output(effective_run_id, parsed, cfg["output_dir"])
     except Exception as exc:
         raise PipelineError("Failed to write analysis output")
 
-    log(f"[{effective_run_id}] Success: wrote analysis to {args.out}")
+    log(f"[{effective_run_id}] Success: wrote analysis to {output_path}")
     _ = handle_exception
 
 
