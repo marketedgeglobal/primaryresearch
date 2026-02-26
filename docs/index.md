@@ -4,7 +4,7 @@ Last updated: {{LAST_UPDATED}}
 
 ## Latest Summary
 
-- [View latest summary](latest.md)
+- [View latest summary](latest.html)
 
 ## Top Themes
 
@@ -21,4 +21,4 @@ Last updated: {{LAST_UPDATED}}
 
 ## Historical Reports
 
-- _This section is auto-populated by workflow._
+- [View Historical Reports](history.md)

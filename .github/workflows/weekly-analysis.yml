@@ -112,44 +112,39 @@ jobs:
             exit 1
           fi
 
-          cp "$SUMMARY_FILE" docs/latest.md
           cp "$SUMMARY_FILE" "docs/summary-$RUN_ID.md"
-
-          export TIMESTAMP_UTC="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          printf '<meta http-equiv="refresh" content="0; url=summary-%s.md" />\n' "$RUN_ID" > docs/latest.html
 
           python - <<'PY'
           from pathlib import Path
           import os
 
-          index_path = Path("docs/index.md")
           run_id = os.environ["RUN_ID"]
-          timestamp = os.environ["TIMESTAMP_UTC"]
-          history_line = f"- [{timestamp}](summary-{run_id}.md)"
+          history_path = Path("docs/history.md")
+          entry = f"- [summary-{run_id}.md](summary-{run_id}.md)"
 
-          content = index_path.read_text(encoding="utf-8")
-          lines = content.splitlines()
+          if history_path.exists():
+            raw_lines = history_path.read_text(encoding="utf-8").splitlines()
+          else:
+            raw_lines = []
 
-          replaced = False
-          for idx, line in enumerate(lines):
-            if line.startswith("Last updated:"):
-              lines[idx] = f"Last updated: {timestamp}"
-              replaced = True
-              break
-          if not replaced:
-            lines.insert(1, f"Last updated: {timestamp}")
+          body_lines = []
+          for line in raw_lines:
+            stripped = line.strip()
+            if stripped == "# Historical Reports":
+              continue
+            if stripped == entry:
+              continue
+            if not stripped and (not body_lines or not body_lines[-1].strip()):
+              continue
+            body_lines.append(line.rstrip())
 
-          if history_line not in lines:
-            try:
-              header_idx = lines.index("## Historical Reports")
-            except ValueError:
-              lines.extend(["", "## Historical Reports", history_line])
-            else:
-              insert_idx = header_idx + 1
-              while insert_idx < len(lines) and lines[insert_idx].strip() == "":
-                insert_idx += 1
-              lines.insert(insert_idx, history_line)
+          output_lines = ["# Historical Reports", "", entry]
+          if body_lines:
+            output_lines.append("")
+            output_lines.extend(body_lines)
 
-          index_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+          history_path.write_text("\n".join(output_lines).rstrip() + "\n", encoding="utf-8")
           PY
 
       - name: Upload weekly analysis artifact
@@ -200,4 +195,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add GitHub Pages dashboard index and auto-update workflow
+# Suggested commit message: feat: add latest-run redirect and historical run browser to GitHub Pages dashboard
