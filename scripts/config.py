@@ -38,6 +38,13 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "output_dir": os.environ.get("OUTPUT_DIR") or "analyses",
         "allow_mock": _as_bool(os.environ.get("ALLOW_MOCK"), True),
         "timeout_seconds": _as_int(os.environ.get("AI_TIMEOUT_SECONDS"), 60),
+        "slack_webhook_url": os.environ.get("SLACK_WEBHOOK_URL") or "",
+        "email_enabled": _as_bool(os.environ.get("EMAIL_ENABLED"), False),
+        "email_smtp_host": os.environ.get("EMAIL_SMTP_HOST") or "",
+        "email_smtp_port": _as_int(os.environ.get("EMAIL_SMTP_PORT"), 587),
+        "email_username": os.environ.get("EMAIL_USERNAME") or "",
+        "email_password": os.environ.get("EMAIL_PASSWORD") or "",
+        "email_to": os.environ.get("EMAIL_TO") or "",
     }
 
     if overrides:

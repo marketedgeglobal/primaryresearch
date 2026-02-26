@@ -13,6 +13,7 @@ import argparse
 import datetime as dt
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -20,6 +21,7 @@ from config import load_config
 from errors import PipelineError, handle_exception, safe_run
 from log_utils import log, log_error
 from output_writer import write_analysis_output, write_error_output
+from publisher import publish
 from run_metadata import generate_run_metadata
 
 
@@ -133,6 +135,66 @@ def extract_json_from_fence(raw: str) -> str | None:
     return match.group(1) if match else None
 
 
+def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
+    generated_utc = str(analysis.get("generated_utc") or "")
+    sheet_summary = str(analysis.get("sheet_summary") or "No summary available.")
+    top_tags = analysis.get("top_tags") if isinstance(analysis.get("top_tags"), list) else []
+    counts_by_status = analysis.get("counts_by_status") if isinstance(analysis.get("counts_by_status"), dict) else {}
+    deadline_overview = analysis.get("deadline_overview") if isinstance(analysis.get("deadline_overview"), dict) else {}
+    items = analysis.get("items") if isinstance(analysis.get("items"), list) else []
+
+    lines: list[str] = [f"# Weekly Analysis Summary — {run_id}", ""]
+    if generated_utc:
+        lines.extend([f"Generated UTC: {generated_utc}", ""])
+
+    lines.extend(["## Overview", "", sheet_summary, ""])
+
+    if top_tags:
+        lines.append("## Top Tags")
+        lines.append("")
+        for tag in top_tags:
+            lines.append(f"- {tag}")
+        lines.append("")
+
+    if counts_by_status:
+        lines.append("## Status Counts")
+        lines.append("")
+        for status, count in counts_by_status.items():
+            lines.append(f"- {status}: {count}")
+        lines.append("")
+
+    if deadline_overview:
+        lines.append("## Deadline Overview")
+        lines.append("")
+        for key, value in deadline_overview.items():
+            lines.append(f"- {key}: {value}")
+        lines.append("")
+
+    if items:
+        lines.append("## Key Items")
+        lines.append("")
+        for item in items[:10]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "Untitled")
+            summary = str(item.get("summary") or "")
+            lines.append(f"- **{title}**")
+            if summary:
+                lines.append(f"  - {summary}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_summary_output(run_id: str, markdown_text: str, output_dir: str) -> str:
+    path = Path(output_dir) / f"summary-{run_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(markdown_text, encoding="utf-8")
+    final_path = str(path)
+    log(f"Wrote markdown summary to {final_path}")
+    return final_path
+
+
 @safe_run
 def main() -> None:
     log("Script start")
@@ -218,6 +280,23 @@ def main() -> None:
         output_path = write_analysis_output(effective_run_id, parsed, cfg["output_dir"])
     except Exception as exc:
         raise PipelineError("Failed to write analysis output")
+
+    try:
+        log("Writing markdown summary")
+        summary_text = build_markdown_summary(parsed, effective_run_id)
+        summary_path = write_summary_output(effective_run_id, summary_text, cfg["output_dir"])
+    except Exception as exc:
+        raise PipelineError("Failed to write markdown summary")
+
+    try:
+        log("Loading publishing config")
+        publish_cfg = load_config()
+        log("Publishing markdown summary")
+        publish_result = publish(effective_run_id, summary_path, publish_cfg)
+        channels = publish_result.get("channels_used", [])
+        log(f"[{effective_run_id}] Publishing result: channels={channels}")
+    except Exception as exc:
+        raise PipelineError("Failed to publish markdown summary")
 
     log(f"[{effective_run_id}] Success: wrote analysis to {output_path}")
     _ = handle_exception
