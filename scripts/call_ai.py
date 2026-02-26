@@ -13,11 +13,11 @@ import argparse
 import datetime as dt
 import json
 import re
-import sys
 from typing import Any
 
 import requests
 from config import load_config
+from errors import PipelineError, handle_exception, safe_run
 from log_utils import log, log_error
 from run_metadata import generate_run_metadata
 
@@ -137,7 +137,8 @@ def write_json(path: str, payload: Any) -> None:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
 
 
-def main() -> int:
+@safe_run
+def main() -> None:
     log("Script start")
     metadata = generate_run_metadata()
     metadata_run_id = metadata["run_id"]
@@ -154,8 +155,7 @@ def main() -> int:
             }
         )
     except Exception as exc:
-        log_error(f"Configuration error: {exc}")
-        return 1
+        raise PipelineError(f"Configuration error: {exc}")
 
     log("Config keys in use: provider, model, timeout_seconds, allow_mock")
     effective_run_id = args.run_id or metadata_run_id
@@ -167,8 +167,7 @@ def main() -> int:
         if not isinstance(rows, list):
             raise ValueError("input JSON must be an array of row objects")
     except Exception as exc:
-        log_error(f"Failed to read input rows: {exc}")
-        return 1
+        raise PipelineError("Failed to read input rows")
 
     log("Building prompt")
     prompt = build_prompt(rows, effective_run_id)
@@ -183,8 +182,7 @@ def main() -> int:
             cfg["timeout_seconds"],
         )
     except Exception as exc:
-        log_error(f"AI provider call failed: {exc}")
-        return 1
+        raise PipelineError("AI provider call failed")
 
     parsed: dict[str, Any] | None = None
     try:
@@ -212,10 +210,8 @@ def main() -> int:
             log_error("AI response parsing failed; writing error payload")
             write_json(args.out, error_payload)
         except Exception as exc:
-            log_error(f"Failed to write output file: {exc}")
-            return 1
-        log_error("Failed to parse AI output as JSON")
-        return 1
+            raise PipelineError("Failed to write AI parse-error output")
+        raise PipelineError("Failed to parse AI output as JSON")
 
     parsed["run_id"] = effective_run_id
 
@@ -223,12 +219,11 @@ def main() -> int:
         log("Writing analysis output")
         write_json(args.out, parsed)
     except Exception as exc:
-        log_error(f"Failed to write output file: {exc}")
-        return 1
+        raise PipelineError("Failed to write analysis output")
 
     log(f"[{effective_run_id}] Success: wrote analysis to {args.out}")
-    return 0
+    _ = handle_exception
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

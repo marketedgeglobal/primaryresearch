@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from typing import Any
 
 from config import load_config
+from errors import PipelineError, handle_exception, safe_run
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from log_utils import log, log_error
@@ -68,7 +68,8 @@ def normalize_rows(values: list[list[str]]) -> list[dict[str, Any]]:
     return rows
 
 
-def main() -> int:
+@safe_run
+def main() -> None:
     log("Script start")
     metadata = generate_run_metadata()
     run_id = metadata["run_id"]
@@ -84,14 +85,12 @@ def main() -> int:
             }
         )
     except Exception as exc:
-        log_error(f"Configuration error: {exc}")
-        return 1
+        raise PipelineError(f"Configuration error: {exc}")
 
     log("Config keys in use: spreadsheet_id, range, service_account_path, timeout_seconds")
 
     if args.limit < 0:
-        log_error("--limit must be >= 0")
-        return 1
+        raise PipelineError("Invalid limit value")
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     try:
@@ -100,8 +99,7 @@ def main() -> int:
             cfg["service_account_path"], scopes=scopes
         )
     except Exception as exc:
-        log_error(f"Failed to load service account: {exc}")
-        return 1
+        raise PipelineError("Failed to load service account credentials")
 
     try:
         log(f"[{run_id}] Fetching sheet values")
@@ -113,8 +111,7 @@ def main() -> int:
             .execute()
         )
     except Exception as exc:
-        log_error(f"Failed to fetch sheet values: {exc}")
-        return 1
+        raise PipelineError("Failed to fetch sheet values")
 
     values = result.get("values", [])
     rows = normalize_rows(values)
@@ -126,12 +123,11 @@ def main() -> int:
         with open(args.out, "w", encoding="utf-8") as handle:
             json.dump(rows, handle, indent=2, ensure_ascii=False)
     except Exception as exc:
-        log_error(f"Failed to write output JSON: {exc}")
-        return 1
+        raise PipelineError("Failed to write rows output")
 
     log(f"[{run_id}] Success: wrote {len(rows)} rows to {args.out}")
-    return 0
+    _ = handle_exception
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

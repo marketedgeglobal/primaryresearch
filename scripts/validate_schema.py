@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from config import load_config
+from errors import PipelineError, handle_exception, safe_run
 from jsonschema import ValidationError, validate
 from log_utils import log, log_error
 from run_metadata import generate_run_metadata
@@ -34,7 +34,8 @@ def write_error_file(message: str) -> None:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
 
 
-def main() -> int:
+@safe_run
+def main() -> None:
     log("Script start")
     metadata = generate_run_metadata()
     run_id = metadata["run_id"]
@@ -43,8 +44,7 @@ def main() -> int:
     try:
         cfg = load_config()
     except Exception as exc:
-        log_error(f"Configuration error: {exc}")
-        return 1
+        raise PipelineError(f"Configuration error: {exc}")
 
     log("Config keys in use: output_dir, provider, timeout_seconds")
 
@@ -57,31 +57,19 @@ def main() -> int:
         with open(args.input, "r", encoding="utf-8") as fh:
             analysis = json.load(fh)
     except Exception as exc:
-        message = f"Failed to load input files: {exc}"
-        log_error(message)
-        try:
-            write_error_file(message)
-        except Exception:
-            pass
-        return 1
+        raise PipelineError("Failed to load schema or analysis files")
 
     try:
         log(f"[{run_id}] Validating analysis against schema")
         validate(instance=analysis, schema=schema)
         log(f"[{run_id}] Schema validation passed")
-        return 0
     except ValidationError as exc:
-        message = f"Schema validation failed: {exc.message}"
+        raise PipelineError(f"Schema validation failed: {exc.message}")
     except Exception as exc:
-        message = f"Schema validation failed: {exc}"
+        raise PipelineError("Schema validation failed")
 
-    log_error(message)
-    try:
-        write_error_file(message)
-    except Exception as write_exc:
-        log_error(f"Also failed to write schema_validation_error.json: {write_exc}")
-    return 1
+    _ = handle_exception
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
