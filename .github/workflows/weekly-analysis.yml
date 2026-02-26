@@ -104,7 +104,7 @@ jobs:
           RUN_ID: ${{ steps.runmeta.outputs.run_id }}
         run: |
           set -euo pipefail
-          mkdir -p docs
+          mkdir -p docs docs/assets docs/partners
 
           SUMMARY_FILE="$OUTPUT_DIR/summary-$RUN_ID.md"
           if [ ! -f "$SUMMARY_FILE" ]; then
@@ -156,9 +156,11 @@ jobs:
 
           python scripts/dashboard_renderer.py \
             --template docs/dashboard_template.md \
+            --partner-template docs/partner_template.md \
             --analyses-dir analyses \
             --docs-dir docs \
             --metadata run_metadata.json \
+            --partners-dir docs/partners \
             --output docs/index.md
 
       - name: Upload weekly analysis artifact
@@ -209,4 +211,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add richer GitHub Pages dashboard layout with auto-generated sections and optional charts
+# Suggested commit message: feat: add interactive filtering and multi-partner dashboards to GitHub Pages

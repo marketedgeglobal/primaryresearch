@@ -2,6 +2,10 @@
 
 Last updated: {{timestamp}}
 
+{{partner_links}}
+
+{{filter_controls}}
+
 ## Top Themes
 
 {{themes_section}}
@@ -21,3 +25,5 @@ Last updated: {{timestamp}}
 ## Historical Reports
 
 {{history_links}}
+
+<script src="assets/filter.js"></script>
