@@ -147,6 +147,20 @@ jobs:
           history_path.write_text("\n".join(output_lines).rstrip() + "\n", encoding="utf-8")
           PY
 
+          HISTORICAL_COUNT=$(find analyses -maxdepth 1 -name 'weekly-*.json' | wc -l | tr -d '[:space:]')
+          if [ "${HISTORICAL_COUNT}" -gt 0 ]; then
+            python scripts/charting.py --analyses-dir analyses --charts-dir docs/charts
+          else
+            echo "No historical analysis files found; skipping chart generation."
+          fi
+
+          python scripts/dashboard_renderer.py \
+            --template docs/dashboard_template.md \
+            --analyses-dir analyses \
+            --docs-dir docs \
+            --metadata run_metadata.json \
+            --output docs/index.md
+
       - name: Upload weekly analysis artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,4 +209,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add latest-run redirect and historical run browser to GitHub Pages dashboard
+# Suggested commit message: feat: add richer GitHub Pages dashboard layout with auto-generated sections and optional charts
