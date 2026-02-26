@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
     env:
       SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
       AI_API_KEY: ${{ secrets.AI_API_KEY }}
@@ -97,6 +99,59 @@ jobs:
           mkdir -p analyses
           cp "$OUTPUT_DIR/analysis-${{ steps.runmeta.outputs.run_id }}.json" "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
 
+      - name: Update dashboard files in docs
+        env:
+          RUN_ID: ${{ steps.runmeta.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+
+          SUMMARY_FILE="$OUTPUT_DIR/summary-$RUN_ID.md"
+          if [ ! -f "$SUMMARY_FILE" ]; then
+            echo "Expected summary file not found: $SUMMARY_FILE"
+            exit 1
+          fi
+
+          cp "$SUMMARY_FILE" docs/latest.md
+          cp "$SUMMARY_FILE" "docs/summary-$RUN_ID.md"
+
+          export TIMESTAMP_UTC="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          index_path = Path("docs/index.md")
+          run_id = os.environ["RUN_ID"]
+          timestamp = os.environ["TIMESTAMP_UTC"]
+          history_line = f"- [{timestamp}](summary-{run_id}.md)"
+
+          content = index_path.read_text(encoding="utf-8")
+          lines = content.splitlines()
+
+          replaced = False
+          for idx, line in enumerate(lines):
+            if line.startswith("Last updated:"):
+              lines[idx] = f"Last updated: {timestamp}"
+              replaced = True
+              break
+          if not replaced:
+            lines.insert(1, f"Last updated: {timestamp}")
+
+          if history_line not in lines:
+            try:
+              header_idx = lines.index("## Historical Reports")
+            except ValueError:
+              lines.extend(["", "## Historical Reports", history_line])
+            else:
+              insert_idx = header_idx + 1
+              while insert_idx < len(lines) and lines[insert_idx].strip() == "":
+                insert_idx += 1
+              lines.insert(insert_idx, history_line)
+
+          index_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+          PY
+
       - name: Upload weekly analysis artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -108,18 +163,29 @@ jobs:
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 
-      - name: Commit weekly analysis
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Commit weekly analysis and dashboard
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add run_metadata.json "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
+          git add run_metadata.json "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json" docs/
           if git diff --cached --quiet; then
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m "chore: add weekly analysis ${{ steps.runmeta.outputs.run_id }}"
+          git commit -m "chore: update weekly analysis and dashboard ${{ steps.runmeta.outputs.run_id }}"
           git push
 
       - name: Upload analysis artifact on failure
@@ -134,4 +200,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: ci: add weekly-analysis GitHub Actions workflow skeleton
+# Suggested commit message: feat: add GitHub Pages dashboard index and auto-update workflow
