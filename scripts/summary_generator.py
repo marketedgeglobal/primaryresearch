@@ -18,6 +18,7 @@ def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
     ranked_opportunities = (
         analysis.get("ranked_opportunities") if isinstance(analysis.get("ranked_opportunities"), list) else []
     )
+    clusters = analysis.get("clusters") if isinstance(analysis.get("clusters"), list) else []
 
     lines: list[str] = [f"# Weekly Analysis Summary — {run_id}", ""]
     if generated_utc:
@@ -59,6 +60,23 @@ def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
             lines.append(f"- **{title}** (score: {score:.2f})")
             if summary:
                 lines.append(f"  - {summary}")
+        lines.append("")
+
+    if clusters:
+        lines.append("## Top Themes")
+        lines.append("")
+        for cluster in clusters:
+            if not isinstance(cluster, dict):
+                continue
+            label = str(cluster.get("label") or f"Cluster {cluster.get('id', '?')}")
+            lines.append(f"- **{label}**")
+            opportunities = cluster.get("opportunities") if isinstance(cluster.get("opportunities"), list) else []
+            valid_opps = [opp for opp in opportunities if isinstance(opp, dict)]
+            valid_opps.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+            for opportunity in valid_opps[:2]:
+                title = str(opportunity.get("title") or opportunity.get("name") or "Untitled")
+                score = float(opportunity.get("score") or 0.0)
+                lines.append(f"  - {title} (score: {score:.2f})")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

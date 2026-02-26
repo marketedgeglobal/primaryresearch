@@ -16,6 +16,7 @@ import re
 from typing import Any
 
 import requests
+from clustering import cluster_opportunities
 from config import load_config
 from errors import PipelineError, handle_exception, safe_run
 from log_utils import log, log_error
@@ -231,6 +232,13 @@ def main() -> None:
         parsed["ranked_opportunities"] = rank_opportunities(opportunities)
     except Exception as exc:
         raise PipelineError("Failed to score and rank opportunities")
+
+    try:
+        log("Clustering opportunities")
+        cluster_payload = cluster_opportunities(parsed["ranked_opportunities"])
+        parsed["clusters"] = cluster_payload.get("clusters", [])
+    except Exception as exc:
+        raise PipelineError("Failed to cluster opportunities")
 
     try:
         log("Writing analysis output")

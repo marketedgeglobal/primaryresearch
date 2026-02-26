@@ -104,6 +104,7 @@ jobs:
           name: weekly-analysis-${{ steps.runmeta.outputs.run_id }}
           path: |
             ${{ env.OUTPUT_DIR }}/analysis-${{ steps.runmeta.outputs.run_id }}.json
+            ${{ env.OUTPUT_DIR }}/summary-${{ steps.runmeta.outputs.run_id }}.md
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 
