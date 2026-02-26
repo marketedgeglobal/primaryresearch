@@ -157,6 +157,12 @@ jobs:
               --analyses-dir analyses \
               --charts-dir docs/charts \
               --trend-data docs/trend_data.json
+
+            python scripts/theme_renderer.py \
+              --analyses-dir analyses \
+              --template docs/theme_template.md \
+              --themes-dir docs/themes \
+              --charts-dir docs/charts/themes
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -219,4 +225,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add trend analytics and multi-run comparisons to dashboard
+# Suggested commit message: feat: add theme-level dashboards with historical insights and charts

@@ -313,6 +313,63 @@ def _build_partner_links(partner_pages: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _humanize_slug(slug: str) -> str:
+    text = slug.replace("-", " ").strip()
+    return text.title() if text else "Untitled Theme"
+
+
+def _extract_markdown_heading(path: Path) -> str | None:
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                heading = stripped[2:].strip()
+                if heading.lower().endswith(" dashboard"):
+                    heading = heading[: -len(" dashboard")].strip()
+                return heading or None
+    except Exception:
+        return None
+    return None
+
+
+def _collect_theme_pages(themes_dir: Path) -> list[tuple[str, str, str]]:
+    if not themes_dir.exists():
+        return []
+
+    pages: list[tuple[str, str, str]] = []
+    for path in sorted(themes_dir.glob("*.md")):
+        slug = path.stem
+        label = _extract_markdown_heading(path) or _humanize_slug(slug)
+        pages.append((label, path.name, slug))
+    return pages
+
+
+def _build_theme_links(theme_pages: list[tuple[str, str, str]], docs_dir: Path) -> str:
+    if not theme_pages:
+        return "## Browse by Theme\n\n- No theme dashboards available."
+
+    lines = ["## Browse by Theme", ""]
+    for label, file_name, slug in theme_pages:
+        lines.append(f"- [{label}](themes/{file_name})")
+        thumbnail_path = docs_dir / "charts" / "themes" / f"{slug}_opportunity_count_trend.png"
+        if thumbnail_path.exists():
+            lines.append(
+                f"  <br><img src=\"charts/themes/{slug}_opportunity_count_trend.png\" width=\"220\" alt=\"{html.escape(label)} trend thumbnail\" />"
+            )
+    return "\n".join(lines)
+
+
+def _build_navigation_links(
+    *,
+    partner_pages: list[tuple[str, str]],
+    theme_pages: list[tuple[str, str, str]],
+    docs_dir: Path,
+) -> str:
+    theme_links = _build_theme_links(theme_pages, docs_dir=docs_dir)
+    partner_links = _build_partner_links(partner_pages)
+    return f"{theme_links}\n\n{partner_links}"
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -476,7 +533,12 @@ def render_dashboard(
         run_id=run_id,
         trend_charts_markdown=trend_charts_markdown,
     )
-    partner_links = _build_partner_links(partner_pages)
+    theme_pages = _collect_theme_pages(docs_dir / "themes")
+    partner_links = _build_navigation_links(
+        partner_pages=partner_pages,
+        theme_pages=theme_pages,
+        docs_dir=docs_dir,
+    )
 
     rendered = fill_template_placeholders(
         template_text,

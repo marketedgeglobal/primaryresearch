@@ -162,6 +162,144 @@ def generate_partner_stacked_bar_chart(
     return _to_markdown_image(output_path, "Partner Trend")
 
 
+def generate_theme_opportunity_count_trend_chart(
+    *,
+    theme_slug: str,
+    theme_label: str,
+    run_points: list[dict[str, Any]],
+    charts_dir: Path = Path("docs/charts/themes"),
+    image_prefix: str = "../charts/themes",
+) -> str:
+    if not run_points:
+        log(f"No run points for theme '{theme_label}'; skipping opportunity count chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping theme opportunity count chart: {exc}")
+        return ""
+
+    labels = [str(point.get("run_id") or "unknown") for point in run_points]
+    values = [int(point.get("opportunity_count") or 0) for point in run_points]
+
+    fig = plt.figure(figsize=(10, 4))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(labels, values, marker="o")
+    ax.set_title(f"{theme_label}: Opportunity Count Trend")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Opportunity Count")
+    ax.tick_params(axis="x", labelrotation=45)
+
+    output_path = charts_dir / f"{theme_slug}_opportunity_count_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, f"{theme_label} Opportunity Count Trend")
+
+
+def generate_theme_average_score_trend_chart(
+    *,
+    theme_slug: str,
+    theme_label: str,
+    run_points: list[dict[str, Any]],
+    charts_dir: Path = Path("docs/charts/themes"),
+    image_prefix: str = "../charts/themes",
+) -> str:
+    if not run_points:
+        log(f"No run points for theme '{theme_label}'; skipping average score chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping theme average score chart: {exc}")
+        return ""
+
+    labels = [str(point.get("run_id") or "unknown") for point in run_points]
+    values = [float(point.get("average_score") or 0.0) for point in run_points]
+
+    fig = plt.figure(figsize=(10, 4))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.plot(labels, values, marker="o")
+    ax.set_title(f"{theme_label}: Average Score Trend")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Average Score")
+    ax.tick_params(axis="x", labelrotation=45)
+
+    output_path = charts_dir / f"{theme_slug}_average_score_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, f"{theme_label} Average Score Trend")
+
+
+def generate_partner_by_theme_stacked_bar_chart(
+    *,
+    theme_slug: str,
+    theme_label: str,
+    run_points: list[dict[str, Any]],
+    charts_dir: Path = Path("docs/charts/themes"),
+    image_prefix: str = "../charts/themes",
+    max_partners: int = 6,
+) -> str:
+    if not run_points:
+        log(f"No run points for theme '{theme_label}'; skipping partner-by-theme chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping partner-by-theme chart: {exc}")
+        return ""
+
+    partner_totals: dict[str, int] = {}
+    for point in run_points:
+        partner_counts = point.get("partner_counts") if isinstance(point.get("partner_counts"), dict) else {}
+        for partner, count in partner_counts.items():
+            partner_name = str(partner)
+            partner_totals[partner_name] = partner_totals.get(partner_name, 0) + int(count or 0)
+
+    if not partner_totals:
+        log(f"No partner counts for theme '{theme_label}'; skipping partner-by-theme chart")
+        return ""
+
+    selected_partners = [
+        partner for partner, _ in sorted(partner_totals.items(), key=lambda item: (-item[1], item[0]))[:max_partners]
+    ]
+    labels = [str(point.get("run_id") or "unknown") for point in run_points]
+
+    fig = plt.figure(figsize=(11, 4.5))
+    ax = fig.add_subplot(1, 1, 1)
+    bottoms = [0] * len(run_points)
+
+    for partner in selected_partners:
+        values = []
+        for point in run_points:
+            partner_counts = point.get("partner_counts") if isinstance(point.get("partner_counts"), dict) else {}
+            values.append(int(partner_counts.get(partner, 0) or 0))
+        ax.bar(labels, values, bottom=bottoms, label=partner)
+        bottoms = [bottoms[index] + values[index] for index in range(len(values))]
+
+    ax.set_title(f"{theme_label}: Partner Mix by Run")
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Opportunity Count")
+    ax.tick_params(axis="x", labelrotation=45)
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0)
+
+    output_path = charts_dir / f"{theme_slug}_partner_mix_trend.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, f"{theme_label} Partner Mix Trend")
+
+
 def generate_trend_charts(
     trend_data: dict[str, Any],
     charts_dir: Path = Path("docs/charts"),
