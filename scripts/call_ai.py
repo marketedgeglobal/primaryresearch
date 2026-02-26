@@ -13,7 +13,6 @@ import argparse
 import datetime as dt
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -23,6 +22,8 @@ from log_utils import log, log_error
 from output_writer import write_analysis_output, write_error_output
 from publisher import publish
 from run_metadata import generate_run_metadata
+from scoring import rank_opportunities
+from summary_generator import build_markdown_summary, write_summary_output
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,64 +136,13 @@ def extract_json_from_fence(raw: str) -> str | None:
     return match.group(1) if match else None
 
 
-def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
-    generated_utc = str(analysis.get("generated_utc") or "")
-    sheet_summary = str(analysis.get("sheet_summary") or "No summary available.")
-    top_tags = analysis.get("top_tags") if isinstance(analysis.get("top_tags"), list) else []
-    counts_by_status = analysis.get("counts_by_status") if isinstance(analysis.get("counts_by_status"), dict) else {}
-    deadline_overview = analysis.get("deadline_overview") if isinstance(analysis.get("deadline_overview"), dict) else {}
-    items = analysis.get("items") if isinstance(analysis.get("items"), list) else []
-
-    lines: list[str] = [f"# Weekly Analysis Summary — {run_id}", ""]
-    if generated_utc:
-        lines.extend([f"Generated UTC: {generated_utc}", ""])
-
-    lines.extend(["## Overview", "", sheet_summary, ""])
-
-    if top_tags:
-        lines.append("## Top Tags")
-        lines.append("")
-        for tag in top_tags:
-            lines.append(f"- {tag}")
-        lines.append("")
-
-    if counts_by_status:
-        lines.append("## Status Counts")
-        lines.append("")
-        for status, count in counts_by_status.items():
-            lines.append(f"- {status}: {count}")
-        lines.append("")
-
-    if deadline_overview:
-        lines.append("## Deadline Overview")
-        lines.append("")
-        for key, value in deadline_overview.items():
-            lines.append(f"- {key}: {value}")
-        lines.append("")
-
-    if items:
-        lines.append("## Key Items")
-        lines.append("")
-        for item in items[:10]:
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("title") or "Untitled")
-            summary = str(item.get("summary") or "")
-            lines.append(f"- **{title}**")
-            if summary:
-                lines.append(f"  - {summary}")
-        lines.append("")
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def write_summary_output(run_id: str, markdown_text: str, output_dir: str) -> str:
-    path = Path(output_dir) / f"summary-{run_id}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(markdown_text, encoding="utf-8")
-    final_path = str(path)
-    log(f"Wrote markdown summary to {final_path}")
-    return final_path
+def get_opportunities(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = analysis.get("opportunities")
+    if not isinstance(candidates, list):
+        candidates = analysis.get("items")
+    if not isinstance(candidates, list):
+        return []
+    return [item for item in candidates if isinstance(item, dict)]
 
 
 @safe_run
@@ -274,6 +224,13 @@ def main() -> None:
         raise PipelineError("Failed to parse AI output as JSON")
 
     parsed["run_id"] = effective_run_id
+
+    try:
+        log("Scoring and ranking opportunities")
+        opportunities = get_opportunities(parsed)
+        parsed["ranked_opportunities"] = rank_opportunities(opportunities)
+    except Exception as exc:
+        raise PipelineError("Failed to score and rank opportunities")
 
     try:
         log("Writing analysis output")

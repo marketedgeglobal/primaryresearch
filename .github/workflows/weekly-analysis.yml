@@ -97,6 +97,16 @@ jobs:
           mkdir -p analyses
           cp "$OUTPUT_DIR/analysis-${{ steps.runmeta.outputs.run_id }}.json" "analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json"
 
+      - name: Upload weekly analysis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-analysis-${{ steps.runmeta.outputs.run_id }}
+          path: |
+            ${{ env.OUTPUT_DIR }}/analysis-${{ steps.runmeta.outputs.run_id }}.json
+            analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
+          if-no-files-found: warn
+
       - name: Commit weekly analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
