@@ -177,6 +177,17 @@ jobs:
               --markdown-output docs/comparative.md \
               --charts-markdown docs/comparative_charts.md \
               --docs-dir docs
+
+            python scripts/insights.py \
+              --run-id "$RUN_ID" \
+              --analyses-dir analyses \
+              --comparative-data docs/comparative_data.json \
+              --trend-data docs/trend_data.json \
+              --output-dir "$OUTPUT_DIR" \
+              --analysis-json "$OUTPUT_DIR/analysis-$RUN_ID.json" \
+              --weekly-analysis-json "analyses/weekly-$RUN_ID.json" \
+              --summary-path "$OUTPUT_DIR/summary-$RUN_ID.md" \
+              --docs-summary-path "docs/summary-$RUN_ID.md"
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -199,6 +210,8 @@ jobs:
           path: |
             ${{ env.OUTPUT_DIR }}/analysis-${{ steps.runmeta.outputs.run_id }}.json
             ${{ env.OUTPUT_DIR }}/summary-${{ steps.runmeta.outputs.run_id }}.md
+            ${{ env.OUTPUT_DIR }}/insights-${{ steps.runmeta.outputs.run_id }}.json
+            docs/insights-${{ steps.runmeta.outputs.run_id }}.md
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 

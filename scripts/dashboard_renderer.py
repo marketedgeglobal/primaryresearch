@@ -393,6 +393,30 @@ def _build_comparative_insights_section(docs_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def _build_top_automated_insights_section(analysis: dict[str, Any], run_id: str, docs_dir: Path) -> str:
+    insights = analysis.get("automated_insights") if isinstance(analysis.get("automated_insights"), list) else []
+    if not insights:
+        return ""
+
+    insights_doc_name = str(analysis.get("insights_doc_path") or f"insights-{run_id}.md")
+    insights_doc_path = docs_dir / insights_doc_name
+    if not insights_doc_path.exists():
+        fallback = docs_dir / f"insights-{run_id}.md"
+        if fallback.exists():
+            insights_doc_name = fallback.name
+
+    lines = ["## Top Automated Insights", ""]
+    for insight in insights[:3]:
+        if not isinstance(insight, dict):
+            continue
+        narrative = str(insight.get("narrative") or insight.get("title") or "")
+        confidence = _safe_float(insight.get("confidence") or 0.0)
+        lines.append(f"- {narrative} (confidence: {confidence:.2f})")
+
+    lines.extend(["", f"- [Open full automated insights]({insights_doc_name})"])
+    return "\n".join(lines)
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -508,12 +532,16 @@ def fill_template_placeholders(
         rendered = rendered.replace(placeholder, value)
 
     comparative_section = _build_comparative_insights_section(docs_dir=docs_dir)
-    if comparative_section:
+    top_insights_section = _build_top_automated_insights_section(analysis, run_id, docs_dir)
+
+    prepend_sections = [section for section in (comparative_section, top_insights_section) if section]
+    if prepend_sections:
         marker = "\n## Full Summary"
+        merged = "\n\n".join(prepend_sections)
         if marker in rendered:
-            rendered = rendered.replace(marker, f"\n{comparative_section}\n\n## Full Summary", 1)
+            rendered = rendered.replace(marker, f"\n{merged}\n\n## Full Summary", 1)
         else:
-            rendered = rendered.rstrip() + f"\n\n{comparative_section}\n"
+            rendered = rendered.rstrip() + f"\n\n{merged}\n"
 
     return rendered.rstrip() + "\n"
 

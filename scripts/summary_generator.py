@@ -9,6 +9,30 @@ from typing import Any
 from log_utils import log
 
 
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _build_top_insights_section(analysis: dict[str, Any], run_id: str) -> list[str]:
+    insights = analysis.get("automated_insights") if isinstance(analysis.get("automated_insights"), list) else []
+    if not insights:
+        return []
+
+    insights_doc_path = str(analysis.get("insights_doc_path") or f"insights-{run_id}.md")
+    lines: list[str] = ["## Top Automated Insights", ""]
+    for insight in insights[:3]:
+        if not isinstance(insight, dict):
+            continue
+        narrative = str(insight.get("narrative") or insight.get("title") or "")
+        confidence = _safe_float(insight.get("confidence") or 0.0)
+        lines.append(f"- {narrative} (confidence: {confidence:.2f})")
+    lines.extend(["", f"- Full details: [{insights_doc_path}]({insights_doc_path})", ""])
+    return lines
+
+
 def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
     generated_utc = str(analysis.get("generated_utc") or "")
     sheet_summary = str(analysis.get("sheet_summary") or "No summary available.")
@@ -25,6 +49,8 @@ def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
         lines.extend([f"Generated UTC: {generated_utc}", ""])
 
     lines.extend(["## Overview", "", sheet_summary, ""])
+
+    lines.extend(_build_top_insights_section(analysis, run_id))
 
     if top_tags:
         lines.append("## Top Tags")

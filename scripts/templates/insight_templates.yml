@@ -1,0 +1,19 @@
+emergence:
+  title: "Emerging momentum in {theme}"
+  narrative: "{theme} grew from {previous_count} to {current_count} opportunities, signaling fresh momentum in this cycle."
+
+decline:
+  title: "Decline detected in {theme}"
+  narrative: "{theme} dropped from {previous_count} to {current_count} opportunities, indicating a potential slowdown."
+
+divergence:
+  title: "Partner divergence in {theme}"
+  narrative: "Performance diverges across partners in {theme}, with a score spread of {score_spread:.2f}."
+
+concentration:
+  title: "Concentration risk in {theme}"
+  narrative: "{partner} now accounts for {share_pct:.1f}% of {theme} opportunities ({count}/{total_count}), indicating concentration."
+
+anomaly:
+  title: "Anomalous week-over-week change"
+  narrative: "{partner} in {theme} shifted by {delta_count:+d} opportunities week-over-week, above expected volatility."

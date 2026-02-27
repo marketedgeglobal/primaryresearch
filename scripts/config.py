@@ -27,6 +27,14 @@ def _as_int(value: str | int | None, default: int) -> int:
     return int(str(value).strip())
 
 
+def _as_float(value: str | float | int | None, default: float) -> float:
+    if value is None:
+        return default
+    if isinstance(value, (float, int)):
+        return float(value)
+    return float(str(value).strip())
+
+
 def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg: dict[str, Any] = {
         "spreadsheet_id": os.environ.get("SPREADSHEET_ID") or "",
@@ -68,4 +76,25 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg["allow_mock"] = allow_mock
     cfg["timeout_seconds"] = _as_int(cfg.get("timeout_seconds"), 60)
     cfg["api_key"] = api_key
+    return cfg
+
+
+def load_insights_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg: dict[str, Any] = {
+        "insight_min_count": _as_int(os.environ.get("INSIGHT_MIN_COUNT"), 3),
+        "insight_delta_threshold": _as_float(os.environ.get("INSIGHT_DELTA_THRESHOLD"), 2.0),
+        "insight_concentration_threshold": _as_float(os.environ.get("INSIGHT_CONCENTRATION_THRESHOLD"), 0.6),
+        "insight_anomaly_multiplier": _as_float(os.environ.get("INSIGHT_ANOMALY_MULTIPLIER"), 2.0),
+        "insight_template_path": os.environ.get("INSIGHT_TEMPLATE_PATH") or "scripts/templates/insight_templates.yml",
+    }
+
+    if overrides:
+        for key, value in overrides.items():
+            if value is not None:
+                cfg[key] = value
+
+    cfg["insight_min_count"] = _as_int(cfg.get("insight_min_count"), 3)
+    cfg["insight_delta_threshold"] = _as_float(cfg.get("insight_delta_threshold"), 2.0)
+    cfg["insight_concentration_threshold"] = _as_float(cfg.get("insight_concentration_threshold"), 0.6)
+    cfg["insight_anomaly_multiplier"] = _as_float(cfg.get("insight_anomaly_multiplier"), 2.0)
     return cfg
