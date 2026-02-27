@@ -19,6 +19,7 @@ jobs:
       SHEET_RANGE: Sheet1!A1:Z
       AI_PROVIDER: openai
       AI_MODEL: gpt-4o-mini
+      FOLLOWUP_MODEL: gpt-4.1-mini
       OUTPUT_DIR: analyses
       ALLOW_MOCK: 'true'
       AI_TIMEOUT_SECONDS: '60'
@@ -46,6 +47,7 @@ jobs:
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
         run: |
+          set +x
           test -n "$GOOGLE_SERVICE_ACCOUNT_KEY"
           printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > /tmp/gservice.json
 

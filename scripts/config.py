@@ -43,6 +43,7 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "provider": os.environ.get("AI_PROVIDER") or "openai",
         "api_key": os.environ.get("AI_API_KEY") or "",
         "model": os.environ.get("AI_MODEL") or "gpt-4o-mini",
+        "followup_model": os.environ.get("FOLLOWUP_MODEL") or os.environ.get("AI_MODEL") or "gpt-4.1-mini",
         "output_dir": os.environ.get("OUTPUT_DIR") or "analyses",
         "allow_mock": _as_bool(os.environ.get("ALLOW_MOCK"), True),
         "timeout_seconds": _as_int(os.environ.get("AI_TIMEOUT_SECONDS"), 60),
@@ -76,6 +77,7 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg["allow_mock"] = allow_mock
     cfg["timeout_seconds"] = _as_int(cfg.get("timeout_seconds"), 60)
     cfg["api_key"] = api_key
+    cfg["followup_model"] = str(cfg.get("followup_model") or cfg.get("model") or "gpt-4.1-mini")
     return cfg
 
 

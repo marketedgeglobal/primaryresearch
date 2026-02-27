@@ -56,7 +56,18 @@ def _build_followups_section(run_id: str, analyses_dir: Path = Path("analyses"))
     if not high_followups:
         return []
 
-    high_followups.sort(key=lambda item: _safe_float(item.get("confidence"), 0.0), reverse=True)
+    def _followup_confidence(alert: dict[str, Any]) -> float:
+        followup_doc = Path(str(alert.get("followup_path") or "")).name
+        followup_json = analyses_dir / f"{Path(followup_doc).stem}.json"
+        if followup_json.exists():
+            try:
+                followup_payload = json.loads(followup_json.read_text(encoding="utf-8"))
+                return _safe_float(followup_payload.get("confidence"), 0.0)
+            except Exception:
+                return _safe_float(alert.get("confidence"), 0.0)
+        return _safe_float(alert.get("confidence"), 0.0)
+
+    high_followups.sort(key=_followup_confidence, reverse=True)
 
     lines = ["## Follow-Up Investigations", ""]
     for alert in high_followups[:2]:

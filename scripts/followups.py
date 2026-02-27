@@ -89,6 +89,7 @@ def generate_followup_prompt(alert: dict[str, Any], analysis_history: list[dict[
     alert_type = str(alert.get("type") or "anomaly").strip().lower()
     evidence = alert.get("evidence") if isinstance(alert.get("evidence"), list) else []
     history_context = _history_preview(analysis_history, max_runs=3)
+    history_count = len(history_context)
 
     request_payload = {
         "alert": {
@@ -114,6 +115,7 @@ def generate_followup_prompt(alert: dict[str, Any], analysis_history: list[dict[
         "}\n\n"
         "Constraints:\n"
         "- Keep analysis grounded in provided evidence and historical context.\n"
+        f"- Use up to the last 2-3 prior runs when available (provided runs: {history_count}).\n"
         "- Provide 3-6 root-cause hypotheses with uncertainty-aware wording.\n"
         "- Provide 3-6 supporting evidence statements tied to signal patterns.\n"
         "- Provide 3-6 recommended next questions/steps for follow-up investigation.\n"
@@ -175,7 +177,7 @@ def _call_openai(prompt: str, config: dict[str, Any]) -> str:
     if not api_key:
         raise ValueError("Missing OpenAI API key")
 
-    model = str(config.get("followup_model") or config.get("model") or "gpt-4o-mini").strip()
+    model = str(config.get("followup_model") or config.get("model") or "gpt-4.1-mini").strip()
     timeout_seconds = int(config.get("timeout_seconds") or 60)
 
     response = requests.post(
@@ -187,6 +189,7 @@ def _call_openai(prompt: str, config: dict[str, Any]) -> str:
         json={
             "model": model,
             "temperature": 0,
+            "seed": 0,
             "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": prompt}],
         },
@@ -241,6 +244,7 @@ def _call_azure_openai(prompt: str, config: dict[str, Any]) -> str:
         },
         json={
             "temperature": 0,
+            "seed": 0,
             "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": prompt}],
         },

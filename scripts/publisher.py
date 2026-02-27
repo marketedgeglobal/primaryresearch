@@ -78,7 +78,19 @@ def _load_followup_highlights(run_id: str, config: dict[str, Any]) -> list[dict[
     if not high_followups:
         return []
 
-    high_followups.sort(key=lambda item: float(item.get("confidence") or 0.0), reverse=True)
+    def _followup_confidence(alert: dict[str, Any]) -> float:
+        followup_path = str(alert.get("followup_path") or "").strip()
+        followup_doc_name = Path(followup_path).name
+        followup_json = Path(output_dir) / f"{Path(followup_doc_name).stem}.json"
+        if followup_json.exists():
+            try:
+                followup_payload = json.loads(followup_json.read_text(encoding="utf-8"))
+                return float(followup_payload.get("confidence") or 0.0)
+            except Exception:
+                return float(alert.get("confidence") or 0.0)
+        return float(alert.get("confidence") or 0.0)
+
+    high_followups.sort(key=_followup_confidence, reverse=True)
 
     highlights: list[dict[str, str]] = []
     for alert in high_followups[:2]:
