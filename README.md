@@ -26,6 +26,18 @@ Primary Research Document Analysis pipeline for weekly Google Sheets data.
 - `rows.json`: Raw rows pulled from the sheet.
 - `analysis.json`: Latest analysis output.
 - `analyses/weekly-<run_id>.json`: Archived analysis outputs from Actions.
+- `analyses/insights-<run_id>.json`: Automated insight objects (type, narrative, evidence, confidence).
+- `docs/insights-<run_id>.md`: Human-readable automated insights report.
+
+## Automated Insights Configuration
+
+Optional environment variables for `scripts/insights.py`:
+
+- `INSIGHT_MIN_COUNT` (default: `3`)
+- `INSIGHT_DELTA_THRESHOLD` (default: `2.0`)
+- `INSIGHT_CONCENTRATION_THRESHOLD` (default: `0.6`)
+- `INSIGHT_ANOMALY_MULTIPLIER` (default: `2.0`)
+- `INSIGHT_TEMPLATE_PATH` (default: `scripts/templates/insight_templates.yml`)
 
 ## Testing Instructions
 
