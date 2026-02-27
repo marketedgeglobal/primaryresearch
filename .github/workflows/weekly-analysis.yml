@@ -196,7 +196,8 @@ jobs:
             from pathlib import Path
 
             sys.path.append("scripts")
-            from alerts import generate_alerts, load_playbooks, write_alerts_output
+            from alerts import generate_alerts, load_playbooks, load_recent_analysis_history, write_alerts_output
+            from config import load_config
             from log_utils import log
 
             run_id = os.environ["RUN_ID"]
@@ -212,9 +213,19 @@ jobs:
                 insights = []
 
             playbooks = load_playbooks("scripts/playbooks/remediation_playbooks.yml")
-            alerts = generate_alerts(insights, playbooks, {"run_id": run_id})
+            pipeline_cfg = load_config({"run_id": run_id, "output_dir": output_dir})
+            pipeline_cfg["analysis_history"] = load_recent_analysis_history("analyses", run_id, max_runs=3)
+
+            alerts = generate_alerts(insights, playbooks, pipeline_cfg)
             paths = write_alerts_output(run_id, alerts, output_dir)
             log(f"Generated {len(alerts)} automated alerts")
+            high_with_followups = [
+              item for item in alerts
+              if isinstance(item, dict)
+              and str(item.get("severity")) == "high"
+              and str(item.get("followup_path") or "").strip()
+            ]
+            log(f"Generated {len(high_with_followups)} follow-up investigations for high-severity alerts")
             log(f"Alert outputs: {paths}")
             PY
           else
@@ -241,8 +252,10 @@ jobs:
             ${{ env.OUTPUT_DIR }}/summary-${{ steps.runmeta.outputs.run_id }}.md
             ${{ env.OUTPUT_DIR }}/insights-${{ steps.runmeta.outputs.run_id }}.json
             ${{ env.OUTPUT_DIR }}/alerts-${{ steps.runmeta.outputs.run_id }}.json
+            ${{ env.OUTPUT_DIR }}/followup-${{ steps.runmeta.outputs.run_id }}-*.json
             docs/insights-${{ steps.runmeta.outputs.run_id }}.md
             docs/alerts-${{ steps.runmeta.outputs.run_id }}.md
+            docs/followup-${{ steps.runmeta.outputs.run_id }}-*.md
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 
@@ -283,4 +296,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add cross-partner × cross-theme comparative analytics and heatmaps
+# Suggested commit message: feat: add agent-driven follow-ups for high-severity alerts

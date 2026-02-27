@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import json
 
 from log_utils import log
 
@@ -33,6 +34,55 @@ def _build_top_insights_section(analysis: dict[str, Any], run_id: str) -> list[s
     return lines
 
 
+def _build_followups_section(run_id: str, analyses_dir: Path = Path("analyses")) -> list[str]:
+    alerts_path = analyses_dir / f"alerts-{run_id}.json"
+    if not alerts_path.exists():
+        return []
+
+    try:
+        payload = json.loads(alerts_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    alerts = payload.get("alerts") if isinstance(payload, dict) else []
+    if not isinstance(alerts, list):
+        return []
+
+    high_followups = [
+        item
+        for item in alerts
+        if isinstance(item, dict) and str(item.get("severity")) == "high" and str(item.get("followup_path") or "").strip()
+    ]
+    if not high_followups:
+        return []
+
+    high_followups.sort(key=lambda item: _safe_float(item.get("confidence"), 0.0), reverse=True)
+
+    lines = ["## Follow-Up Investigations", ""]
+    for alert in high_followups[:2]:
+        title = str(alert.get("title") or "Untitled alert")
+        confidence = _safe_float(alert.get("confidence"), 0.0)
+        followup_doc = Path(str(alert.get("followup_path") or "")).name
+
+        teaser = "Follow-up generated."
+        followup_json = analyses_dir / f"{Path(followup_doc).stem}.json"
+        if followup_json.exists():
+            try:
+                followup_payload = json.loads(followup_json.read_text(encoding="utf-8"))
+                deeper = str(followup_payload.get("deeper_analysis") or "").strip()
+                if deeper:
+                    teaser = deeper[:180] + ("..." if len(deeper) > 180 else "")
+            except Exception:
+                teaser = "Follow-up generated."
+
+        lines.append(f"- **{title}** (alert confidence: {confidence:.2f})")
+        lines.append(f"  - {teaser}")
+        lines.append(f"  - Full follow-up: [{followup_doc}]({followup_doc})")
+
+    lines.append("")
+    return lines
+
+
 def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
     generated_utc = str(analysis.get("generated_utc") or "")
     sheet_summary = str(analysis.get("sheet_summary") or "No summary available.")
@@ -51,6 +101,7 @@ def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
     lines.extend(["## Overview", "", sheet_summary, ""])
 
     lines.extend(_build_top_insights_section(analysis, run_id))
+    lines.extend(_build_followups_section(run_id))
 
     if top_tags:
         lines.append("## Top Tags")

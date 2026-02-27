@@ -53,6 +53,74 @@ def _append_alerts_markdown(markdown_text: str, run_id: str, high_alerts: list[d
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _load_followup_highlights(run_id: str, config: dict[str, Any]) -> list[dict[str, str]]:
+    output_dir = str(config.get("output_dir") or "analyses")
+    alerts_path = Path(output_dir) / f"alerts-{run_id}.json"
+    if not alerts_path.exists():
+        return []
+
+    try:
+        payload = json.loads(alerts_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    alerts = payload.get("alerts") if isinstance(payload, dict) else []
+    if not isinstance(alerts, list):
+        return []
+
+    high_followups = [
+        item
+        for item in alerts
+        if isinstance(item, dict)
+        and str(item.get("severity")) == "high"
+        and str(item.get("followup_path") or "").strip()
+    ]
+    if not high_followups:
+        return []
+
+    high_followups.sort(key=lambda item: float(item.get("confidence") or 0.0), reverse=True)
+
+    highlights: list[dict[str, str]] = []
+    for alert in high_followups[:2]:
+        title = str(alert.get("title") or "Untitled alert")
+        followup_path = str(alert.get("followup_path") or "").strip()
+        followup_doc_name = Path(followup_path).name
+        followup_link = f"docs/{followup_doc_name}"
+
+        teaser = "Follow-up generated."
+        followup_json = Path(output_dir) / f"{Path(followup_doc_name).stem}.json"
+        if followup_json.exists():
+            try:
+                followup_payload = json.loads(followup_json.read_text(encoding="utf-8"))
+                deeper = str(followup_payload.get("deeper_analysis") or "").strip()
+                if deeper:
+                    teaser = deeper[:180] + ("..." if len(deeper) > 180 else "")
+            except Exception:
+                teaser = "Follow-up generated."
+
+        highlights.append({"title": title, "teaser": teaser, "link": followup_link})
+
+    return highlights
+
+
+def _append_followups_markdown(markdown_text: str, followup_highlights: list[dict[str, str]]) -> str:
+    if not followup_highlights:
+        return markdown_text
+
+    lines = [markdown_text.rstrip(), "", "## Follow-Up Investigations", ""]
+    for item in followup_highlights:
+        title = str(item.get("title") or "Untitled follow-up")
+        teaser = str(item.get("teaser") or "Follow-up generated.")
+        link = str(item.get("link") or "")
+
+        lines.append(f"- **{title}**")
+        lines.append(f"  - {teaser}")
+        if link:
+            lines.append(f"  - Full follow-up: {link}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _markdown_to_slack(markdown_text: str) -> str:
     text = markdown_text.replace("\r\n", "\n")
     text = re.sub(r"^###\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
@@ -123,7 +191,9 @@ def publish(run_id: str, summary_path: str, config: dict[str, Any]) -> dict[str,
 
     markdown_text = summary_file.read_text(encoding="utf-8")
     high_alerts, alerts_link = _load_high_severity_alerts(run_id, config)
+    followup_highlights = _load_followup_highlights(run_id, config)
     publish_markdown = _append_alerts_markdown(markdown_text, run_id, high_alerts, alerts_link)
+    publish_markdown = _append_followups_markdown(publish_markdown, followup_highlights)
     channels_used: list[str] = []
     results: dict[str, Any] = {}
 

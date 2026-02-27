@@ -460,6 +460,52 @@ def _build_automated_alerts_section(run_id: str, analyses_dir: Path, docs_dir: P
     return "\n".join(lines)
 
 
+def _build_followup_investigations_section(run_id: str, analyses_dir: Path, docs_dir: Path) -> str:
+    alerts_path = analyses_dir / f"alerts-{run_id}.json"
+    if not alerts_path.exists():
+        return ""
+
+    payload = _load_json(alerts_path)
+    alerts = payload.get("alerts") if isinstance(payload.get("alerts"), list) else []
+    high_alerts = [
+        item
+        for item in alerts
+        if isinstance(item, dict) and str(item.get("severity")) == "high" and str(item.get("followup_path") or "").strip()
+    ]
+    if not high_alerts:
+        return ""
+
+    lines = ["## Follow-Up Investigations", ""]
+
+    for alert in high_alerts[:5]:
+        title = str(alert.get("title") or "Untitled alert")
+        followup_path_value = str(alert.get("followup_path") or "").strip()
+        followup_doc = Path(followup_path_value)
+        if not followup_doc.is_absolute():
+            followup_doc = Path(followup_path_value)
+        if not followup_doc.exists():
+            followup_doc = docs_dir / followup_doc.name
+
+        followup_doc_name = followup_doc.name if followup_doc.exists() else followup_path_value
+        followup_json = analyses_dir / f"{Path(followup_doc_name).stem}.json"
+
+        teaser = "Follow-up generated. Open full investigation for details."
+        if followup_json.exists():
+            try:
+                followup_payload = _load_json(followup_json)
+                deeper = str(followup_payload.get("deeper_analysis") or "").strip()
+                if deeper:
+                    teaser = deeper[:220] + ("..." if len(deeper) > 220 else "")
+            except Exception:
+                teaser = "Follow-up generated. Open full investigation for details."
+
+        lines.append(f"- **{title}**")
+        lines.append(f"  - {teaser}")
+        lines.append(f"  - [Open full follow-up]({followup_doc_name})")
+
+    return "\n".join(lines)
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -578,10 +624,11 @@ def fill_template_placeholders(
     comparative_section = _build_comparative_insights_section(docs_dir=docs_dir)
     top_insights_section = _build_top_automated_insights_section(analysis, run_id, docs_dir)
     automated_alerts_section = _build_automated_alerts_section(run_id, analyses_dir, docs_dir)
+    followups_section = _build_followup_investigations_section(run_id, analyses_dir, docs_dir)
 
     prepend_sections = [
         section
-        for section in (comparative_section, top_insights_section, automated_alerts_section)
+        for section in (comparative_section, top_insights_section, automated_alerts_section, followups_section)
         if section
     ]
     if prepend_sections:

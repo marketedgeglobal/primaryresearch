@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from followups import generate_followup_prompt, run_followup_agent, write_followup_output
 from log_utils import log
 from output_writer import write_json
 
@@ -222,6 +223,61 @@ def _recommended_actions(playbook: dict[str, Any], fallback_type: str) -> list[d
     ]
 
 
+def load_recent_analysis_history(analyses_dir: str | Path, current_run_id: str, max_runs: int = 3) -> list[dict[str, Any]]:
+    directory = Path(analyses_dir)
+    if not directory.exists():
+        return []
+
+    candidates = sorted(directory.glob("weekly-*.json"), key=lambda path: path.stat().st_mtime)
+    history: list[dict[str, Any]] = []
+
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        if not isinstance(payload, dict):
+            continue
+
+        run_id = str(payload.get("run_id") or "")
+        if run_id and run_id == current_run_id:
+            continue
+        history.append(payload)
+
+    return history[-max_runs:]
+
+
+def _generate_high_severity_followups(
+    alerts: list[dict[str, Any]],
+    *,
+    run_id: str,
+    config: dict[str, Any],
+) -> None:
+    if not alerts:
+        return
+
+    analysis_history = config.get("analysis_history") if isinstance(config.get("analysis_history"), list) else []
+    output_dir = str(config.get("output_dir") or "analyses")
+
+    high_alerts = [item for item in alerts if str(item.get("severity")) == "high"]
+    if not high_alerts:
+        return
+
+    for alert in high_alerts:
+        alert_run_id = str(alert.get("run_id") or run_id)
+        alert_id = str(alert.get("id") or "alert")
+
+        try:
+            prompt = generate_followup_prompt(alert, analysis_history)
+            followup_payload = run_followup_agent(prompt, config)
+            output_paths = write_followup_output(alert_run_id, alert_id, followup_payload, output_dir)
+            alert["followup_path"] = output_paths["docs_markdown"]
+        except Exception as exc:
+            log(f"Follow-up generation failed for alert {alert_id}: {exc}")
+            alert["followup_path"] = ""
+
+
 def generate_alerts(insights: list[dict[str, Any]], playbooks: dict[str, Any], config: dict[str, Any]) -> list[dict[str, Any]]:
     run_id = str(config.get("run_id") or "")
     alerts: list[dict[str, Any]] = []
@@ -249,6 +305,7 @@ def generate_alerts(insights: list[dict[str, Any]], playbooks: dict[str, Any], c
         alerts.append(
             {
                 "id": f"alert-{source_id}",
+                "type": insight_type,
                 "severity": severity,
                 "title": title,
                 "summary": summary,
@@ -256,6 +313,7 @@ def generate_alerts(insights: list[dict[str, Any]], playbooks: dict[str, Any], c
                 "recommended_actions": _recommended_actions(playbook, insight_type),
                 "confidence": confidence,
                 "run_id": resolved_run_id,
+                "followup_path": "",
             }
         )
 
@@ -265,6 +323,13 @@ def generate_alerts(insights: list[dict[str, Any]], playbooks: dict[str, Any], c
             -_safe_float(item.get("confidence"), 0.0),
         )
     )
+
+    _generate_high_severity_followups(
+        alerts,
+        run_id=run_id,
+        config=config,
+    )
+
     return alerts
 
 
