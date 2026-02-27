@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import smtplib
 from email.message import EmailMessage
@@ -12,6 +13,44 @@ from typing import Any
 import requests
 
 from log_utils import log
+
+
+def _load_high_severity_alerts(run_id: str, config: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    output_dir = str(config.get("output_dir") or "analyses")
+    alerts_path = Path(output_dir) / f"alerts-{run_id}.json"
+    docs_link = f"docs/alerts-{run_id}.md"
+
+    if not alerts_path.exists():
+        return [], docs_link
+
+    try:
+        payload = json.loads(alerts_path.read_text(encoding="utf-8"))
+    except Exception:
+        return [], docs_link
+
+    alerts = payload.get("alerts") if isinstance(payload, dict) else []
+    if not isinstance(alerts, list):
+        return [], docs_link
+
+    high_alerts = [item for item in alerts if isinstance(item, dict) and str(item.get("severity")) == "high"]
+    return high_alerts, docs_link
+
+
+def _append_alerts_markdown(markdown_text: str, run_id: str, high_alerts: list[dict[str, Any]], alerts_link: str) -> str:
+    if not high_alerts:
+        return markdown_text
+
+    lines = [markdown_text.rstrip(), "", "## High Severity Alerts", ""]
+    for alert in high_alerts[:5]:
+        title = str(alert.get("title") or "Untitled alert")
+        summary = str(alert.get("summary") or "")
+        confidence = float(alert.get("confidence") or 0.0)
+        lines.append(f"- **{title}** (confidence: {confidence:.2f})")
+        if summary:
+            lines.append(f"  - {summary}")
+
+    lines.extend(["", f"Full alert report: {alerts_link}"])
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _markdown_to_slack(markdown_text: str) -> str:
@@ -83,12 +122,14 @@ def publish(run_id: str, summary_path: str, config: dict[str, Any]) -> dict[str,
         raise FileNotFoundError(f"Summary file not found: {summary_path}")
 
     markdown_text = summary_file.read_text(encoding="utf-8")
+    high_alerts, alerts_link = _load_high_severity_alerts(run_id, config)
+    publish_markdown = _append_alerts_markdown(markdown_text, run_id, high_alerts, alerts_link)
     channels_used: list[str] = []
     results: dict[str, Any] = {}
 
     webhook_url = str(config.get("slack_webhook_url") or "").strip()
     if webhook_url:
-        results["slack"] = publish_markdown_to_slack(webhook_url, markdown_text)
+        results["slack"] = publish_markdown_to_slack(webhook_url, publish_markdown)
         channels_used.append("slack")
 
     email_enabled = bool(config.get("email_enabled"))
@@ -101,7 +142,7 @@ def publish(run_id: str, summary_path: str, config: dict[str, Any]) -> dict[str,
             "to": config.get("email_to"),
             "run_id": run_id,
         }
-        results["email"] = publish_markdown_to_email(smtp_settings, markdown_text)
+        results["email"] = publish_markdown_to_email(smtp_settings, publish_markdown)
         channels_used.append("email")
 
     if channels_used:

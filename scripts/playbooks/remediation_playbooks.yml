@@ -1,0 +1,114 @@
+emergence:
+  severity_threshold:
+    high: 0.82
+    medium: 0.62
+  actions:
+    - title: Validate momentum signal quality
+      owner: Research lead
+      timeline: 24-48h
+      detail: Confirm change is driven by net-new opportunities rather than source noise.
+    - title: Prioritize top partner outreach
+      owner: Partner manager
+      timeline: 3 business days
+      detail: Contact partners showing strongest emergence to confirm intent and timing.
+    - title: Allocate exploratory capacity
+      owner: Portfolio operations
+      timeline: This week
+      detail: Reserve analyst and delivery slots for rapid follow-up on emerging demand.
+    - title: Define conversion checkpoints
+      owner: Revenue operations
+      timeline: This week
+      detail: Track discovery-to-proposal and proposal-to-win conversion for this theme.
+  notes: Escalate when emergence is sustained across consecutive runs.
+
+decline:
+  severity_threshold:
+    high: 0.8
+    medium: 0.6
+  actions:
+    - title: Diagnose root cause by segment
+      owner: Insights analyst
+      timeline: 48h
+      detail: Break down decline by partner, geography, and deal stage to isolate drivers.
+    - title: Re-engage stalled opportunities
+      owner: Account team
+      timeline: 3 business days
+      detail: Re-activate at-risk opportunities with targeted follow-up plans.
+    - title: Adjust pipeline forecast
+      owner: Finance partner
+      timeline: This week
+      detail: Update near-term forecast assumptions to reflect validated downward trends.
+    - title: Trigger corrective campaign
+      owner: Growth lead
+      timeline: This week
+      detail: Launch focused campaign for segments showing highest drop-off.
+  notes: Combine with anomaly alerts to separate one-off dips from structural decline.
+
+divergence:
+  severity_threshold:
+    high: 0.78
+    medium: 0.58
+  actions:
+    - title: Standardize best-practice playbook
+      owner: Enablement lead
+      timeline: This week
+      detail: Capture tactics from high-performing partners and package for reuse.
+    - title: Coach underperforming partners
+      owner: Partner success
+      timeline: 5 business days
+      detail: Run targeted coaching for partners with below-baseline conversion quality.
+    - title: Rebalance opportunity distribution
+      owner: Program manager
+      timeline: This week
+      detail: Shift qualified opportunities toward partners with consistent execution.
+    - title: Review qualification criteria
+      owner: Sales operations
+      timeline: This week
+      detail: Tighten qualification to reduce variance caused by inconsistent intake.
+  notes: Track divergence with score spread and win-rate variance in tandem.
+
+concentration:
+  severity_threshold:
+    high: 0.76
+    medium: 0.56
+  actions:
+    - title: Define concentration ceiling
+      owner: Risk lead
+      timeline: 48h
+      detail: Set acceptable partner share limits for high-impact themes.
+    - title: Diversify sourcing channels
+      owner: Demand generation
+      timeline: This week
+      detail: Expand channel mix to reduce dependence on a single partner source.
+    - title: Add backup execution partners
+      owner: Partner operations
+      timeline: 1-2 weeks
+      detail: Activate secondary partners with pre-approved onboarding paths.
+    - title: Stress-test dependency scenarios
+      owner: Strategy lead
+      timeline: This week
+      detail: Model downside impact if primary partner volume drops abruptly.
+  notes: Treat persistent concentration as a portfolio resilience risk.
+
+anomaly:
+  severity_threshold:
+    high: 0.84
+    medium: 0.64
+  actions:
+    - title: Verify data integrity and source freshness
+      owner: Data engineering
+      timeline: 24h
+      detail: Check ingestion completeness, deduplication, and timestamp consistency.
+    - title: Triage operational incidents
+      owner: Operations lead
+      timeline: 24-48h
+      detail: Confirm whether process disruptions explain abrupt week-over-week movement.
+    - title: Initiate rapid response review
+      owner: Intelligence lead
+      timeline: 48h
+      detail: Conduct cross-functional review and assign owners for immediate mitigations.
+    - title: Increase monitoring cadence
+      owner: Analytics team
+      timeline: This week
+      detail: Move affected segment to short-interval monitoring until stable.
+  notes: Escalate immediately when anomaly coincides with high-confidence decline or concentration.

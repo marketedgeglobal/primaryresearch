@@ -417,6 +417,49 @@ def _build_top_automated_insights_section(analysis: dict[str, Any], run_id: str,
     return "\n".join(lines)
 
 
+def _build_automated_alerts_section(run_id: str, analyses_dir: Path, docs_dir: Path) -> str:
+    alerts_path = analyses_dir / f"alerts-{run_id}.json"
+    alerts_doc_name = f"alerts-{run_id}.md"
+    alerts_doc_path = docs_dir / alerts_doc_name
+
+    if not alerts_path.exists() and not alerts_doc_path.exists():
+        return ""
+
+    payload: dict[str, Any] = {}
+    if alerts_path.exists():
+        payload = _load_json(alerts_path)
+
+    alerts = payload.get("alerts") if isinstance(payload.get("alerts"), list) else []
+    high_alerts = [item for item in alerts if isinstance(item, dict) and str(item.get("severity")) == "high"]
+    medium_alerts = [item for item in alerts if isinstance(item, dict) and str(item.get("severity")) == "medium"]
+
+    lines = ["## Automated Alerts", ""]
+
+    lines.append("### High Severity")
+    lines.append("")
+    if high_alerts:
+        for alert in high_alerts[:3]:
+            title = str(alert.get("title") or "Untitled alert")
+            confidence = _safe_float(alert.get("confidence") or 0.0)
+            lines.append(f"- {title} (confidence: {confidence:.2f})")
+    else:
+        lines.append("- No high-severity alerts for this run.")
+
+    lines.extend(["", "### Medium Severity", ""])
+    if medium_alerts:
+        for alert in medium_alerts[:5]:
+            title = str(alert.get("title") or "Untitled alert")
+            confidence = _safe_float(alert.get("confidence") or 0.0)
+            lines.append(f"- {title} (confidence: {confidence:.2f})")
+    else:
+        lines.append("- No medium-severity alerts for this run.")
+
+    if alerts_doc_path.exists():
+        lines.extend(["", f"- [Open full automated alerts]({alerts_doc_name})"])
+
+    return "\n".join(lines)
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -486,6 +529,7 @@ def fill_template_placeholders(
     partner_links: str,
     trend_data: dict[str, Any],
     trend_charts_markdown: str,
+    analyses_dir: Path = Path("analyses"),
     docs_dir: Path = Path("docs"),
 ) -> str:
     log("Filling dashboard template placeholders")
@@ -533,8 +577,13 @@ def fill_template_placeholders(
 
     comparative_section = _build_comparative_insights_section(docs_dir=docs_dir)
     top_insights_section = _build_top_automated_insights_section(analysis, run_id, docs_dir)
+    automated_alerts_section = _build_automated_alerts_section(run_id, analyses_dir, docs_dir)
 
-    prepend_sections = [section for section in (comparative_section, top_insights_section) if section]
+    prepend_sections = [
+        section
+        for section in (comparative_section, top_insights_section, automated_alerts_section)
+        if section
+    ]
     if prepend_sections:
         marker = "\n## Full Summary"
         merged = "\n\n".join(prepend_sections)
@@ -606,6 +655,7 @@ def render_dashboard(
         partner_links=partner_links,
         trend_data=trend_data,
         trend_charts_markdown=trend_charts_markdown,
+        analyses_dir=analyses_dir,
         docs_dir=docs_dir,
     )
     return write_rendered_dashboard(rendered, output_path=output_path)

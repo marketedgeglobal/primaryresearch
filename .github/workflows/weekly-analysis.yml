@@ -188,6 +188,35 @@ jobs:
               --weekly-analysis-json "analyses/weekly-$RUN_ID.json" \
               --summary-path "$OUTPUT_DIR/summary-$RUN_ID.md" \
               --docs-summary-path "docs/summary-$RUN_ID.md"
+
+            python - <<'PY'
+            import json
+            import os
+            import sys
+            from pathlib import Path
+
+            sys.path.append("scripts")
+            from alerts import generate_alerts, load_playbooks, write_alerts_output
+            from log_utils import log
+
+            run_id = os.environ["RUN_ID"]
+            output_dir = os.environ.get("OUTPUT_DIR", "analyses")
+
+            insights_path = Path(output_dir) / f"insights-{run_id}.json"
+            if not insights_path.exists():
+                raise FileNotFoundError(f"Missing insights file: {insights_path}")
+
+            insights_payload = json.loads(insights_path.read_text(encoding="utf-8"))
+            insights = insights_payload.get("insights") if isinstance(insights_payload, dict) else []
+            if not isinstance(insights, list):
+                insights = []
+
+            playbooks = load_playbooks("scripts/playbooks/remediation_playbooks.yml")
+            alerts = generate_alerts(insights, playbooks, {"run_id": run_id})
+            paths = write_alerts_output(run_id, alerts, output_dir)
+            log(f"Generated {len(alerts)} automated alerts")
+            log(f"Alert outputs: {paths}")
+            PY
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -211,7 +240,9 @@ jobs:
             ${{ env.OUTPUT_DIR }}/analysis-${{ steps.runmeta.outputs.run_id }}.json
             ${{ env.OUTPUT_DIR }}/summary-${{ steps.runmeta.outputs.run_id }}.md
             ${{ env.OUTPUT_DIR }}/insights-${{ steps.runmeta.outputs.run_id }}.json
+            ${{ env.OUTPUT_DIR }}/alerts-${{ steps.runmeta.outputs.run_id }}.json
             docs/insights-${{ steps.runmeta.outputs.run_id }}.md
+            docs/alerts-${{ steps.runmeta.outputs.run_id }}.md
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 
