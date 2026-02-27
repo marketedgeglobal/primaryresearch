@@ -49,6 +49,33 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate required configuration
+        run: |
+          set -euo pipefail
+
+          missing=0
+          if [ -z "${SPREADSHEET_ID:-}" ]; then
+            echo "Missing required secret: SPREADSHEET_ID"
+            missing=1
+          fi
+          if [ -z "${AI_API_KEY:-}" ]; then
+            echo "Missing required secret: AI_API_KEY"
+            missing=1
+          fi
+          if [ -z "${GOOGLE_SERVICE_ACCOUNT_KEY:-}" ]; then
+            echo "Missing required secret: GOOGLE_SERVICE_ACCOUNT_KEY"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Add the missing secret(s) under Settings -> Secrets and variables -> Actions, then re-run this workflow."
+            exit 1
+          fi
+
+          echo "Required configuration is present."
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
       - name: Write service account key
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
@@ -256,7 +283,7 @@ jobs:
             --output docs/index.md
 
       - name: Upload weekly analysis artifact
-        if: always()
+        if: always() && env.RUN_ID != ''
         uses: actions/upload-artifact@v4
         with:
           name: weekly-analysis-${{ env.RUN_ID }}
