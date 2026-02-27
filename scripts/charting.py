@@ -24,6 +24,17 @@ def _to_markdown_image(path: Path, title: str) -> str:
     return f"![{title}]({path.as_posix()})"
 
 
+def _normalize_key(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _format_axis_label(label: str, limit: int = 26) -> str:
+    text = str(label or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def _save_chart(fig: Any, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -300,6 +311,237 @@ def generate_partner_by_theme_stacked_bar_chart(
     return _to_markdown_image(Path(image_prefix) / output_path.name, f"{theme_label} Partner Mix Trend")
 
 
+def generate_partner_theme_heatmap(
+    comparative_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    matrix = comparative_data.get("matrix") if isinstance(comparative_data.get("matrix"), dict) else {}
+    counts = matrix.get("counts") if isinstance(matrix.get("counts"), dict) else {}
+    partners = comparative_data.get("partners") if isinstance(comparative_data.get("partners"), list) else []
+    themes = comparative_data.get("themes") if isinstance(comparative_data.get("themes"), list) else []
+
+    valid_partners = [str(partner) for partner in partners if isinstance(partner, str)]
+    valid_themes = [str(theme) for theme in themes if isinstance(theme, str)]
+    if not valid_partners or not valid_themes:
+        log("Insufficient comparative data for partner x theme heatmap")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping comparative heatmap: {exc}")
+        return ""
+
+    values: list[list[int]] = []
+    for partner in valid_partners:
+        row_counts = counts.get(partner) if isinstance(counts.get(partner), dict) else {}
+        row = [int(row_counts.get(theme, 0) or 0) for theme in valid_themes]
+        values.append(row)
+
+    fig = plt.figure(figsize=(max(8, len(valid_themes) * 1.1), max(4.5, len(valid_partners) * 0.6)))
+    ax = fig.add_subplot(1, 1, 1)
+    image = ax.imshow(values, cmap="YlGnBu", aspect="auto")
+    fig.colorbar(image, ax=ax, label="Opportunity Count")
+
+    ax.set_title("Partner × Theme Opportunity Heatmap")
+    ax.set_xticks(range(len(valid_themes)))
+    ax.set_xticklabels([_format_axis_label(theme) for theme in valid_themes], rotation=45, ha="right")
+    ax.set_yticks(range(len(valid_partners)))
+    ax.set_yticklabels([_format_axis_label(partner) for partner in valid_partners])
+
+    output_path = charts_dir / "partner_theme_heatmap.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, "Partner x Theme Heatmap")
+
+
+def generate_partner_specialization_bar_chart(
+    comparative_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    strengths = (
+        comparative_data.get("partner_strengths") if isinstance(comparative_data.get("partner_strengths"), list) else []
+    )
+    if not strengths:
+        log("No partner strengths found; skipping specialization chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping partner specialization chart: {exc}")
+        return ""
+
+    labels: list[str] = []
+    values: list[int] = []
+    for entry in strengths:
+        if not isinstance(entry, dict):
+            continue
+        partner = str(entry.get("partner") or "")
+        strong_themes = entry.get("strong_themes") if isinstance(entry.get("strong_themes"), list) else []
+        if not partner:
+            continue
+        labels.append(_format_axis_label(partner, limit=22))
+        values.append(len(strong_themes))
+
+    if not labels:
+        return ""
+
+    fig = plt.figure(figsize=(max(8, len(labels) * 0.85), 4.5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.bar(labels, values)
+    ax.set_title("Partner Specialization (Strong Themes Count)")
+    ax.set_xlabel("Partner")
+    ax.set_ylabel("Strong Themes")
+    ax.tick_params(axis="x", labelrotation=45)
+
+    output_path = charts_dir / "partner_specialization.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, "Partner Specialization")
+
+
+def generate_theme_coverage_chart(
+    comparative_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    matrix = comparative_data.get("matrix") if isinstance(comparative_data.get("matrix"), dict) else {}
+    counts = matrix.get("counts") if isinstance(matrix.get("counts"), dict) else {}
+    themes = comparative_data.get("themes") if isinstance(comparative_data.get("themes"), list) else []
+    partners = comparative_data.get("partners") if isinstance(comparative_data.get("partners"), list) else []
+
+    valid_themes = [str(theme) for theme in themes if isinstance(theme, str)]
+    valid_partners = [str(partner) for partner in partners if isinstance(partner, str)]
+    if not valid_themes or not valid_partners:
+        log("Insufficient comparative data for theme coverage chart")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping theme coverage chart: {exc}")
+        return ""
+
+    labels: list[str] = []
+    values: list[int] = []
+    for theme in valid_themes:
+        coverage = 0
+        for partner in valid_partners:
+            partner_counts = counts.get(partner) if isinstance(counts.get(partner), dict) else {}
+            if int(partner_counts.get(theme, 0) or 0) > 0:
+                coverage += 1
+        labels.append(_format_axis_label(theme, limit=24))
+        values.append(coverage)
+
+    fig = plt.figure(figsize=(max(8, len(labels) * 0.85), 4.5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.bar(labels, values)
+    ax.set_title("Theme Coverage Across Partners")
+    ax.set_xlabel("Theme")
+    ax.set_ylabel("Partners with Activity")
+    ax.tick_params(axis="x", labelrotation=45)
+
+    output_path = charts_dir / "theme_coverage.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, "Theme Coverage")
+
+
+def generate_delta_heatmap(
+    comparative_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    matrix = comparative_data.get("matrix") if isinstance(comparative_data.get("matrix"), dict) else {}
+    delta_counts = matrix.get("delta_counts") if isinstance(matrix.get("delta_counts"), dict) else {}
+    partners = comparative_data.get("partners") if isinstance(comparative_data.get("partners"), list) else []
+    themes = comparative_data.get("themes") if isinstance(comparative_data.get("themes"), list) else []
+
+    valid_partners = [str(partner) for partner in partners if isinstance(partner, str)]
+    valid_themes = [str(theme) for theme in themes if isinstance(theme, str)]
+    if not valid_partners or not valid_themes:
+        log("Insufficient comparative data for delta heatmap")
+        return ""
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        log(f"matplotlib not available; skipping delta heatmap: {exc}")
+        return ""
+
+    values: list[list[int]] = []
+    for partner in valid_partners:
+        partner_deltas = delta_counts.get(partner) if isinstance(delta_counts.get(partner), dict) else {}
+        row = [int(partner_deltas.get(theme, 0) or 0) for theme in valid_themes]
+        values.append(row)
+
+    max_abs = max(abs(value) for row in values for value in row) if values else 1
+    if max_abs == 0:
+        max_abs = 1
+
+    fig = plt.figure(figsize=(max(8, len(valid_themes) * 1.1), max(4.5, len(valid_partners) * 0.6)))
+    ax = fig.add_subplot(1, 1, 1)
+    image = ax.imshow(values, cmap="RdYlGn", aspect="auto", vmin=-max_abs, vmax=max_abs)
+    fig.colorbar(image, ax=ax, label="Week-over-Week Delta")
+
+    ax.set_title("Partner × Theme Week-over-Week Delta Heatmap")
+    ax.set_xticks(range(len(valid_themes)))
+    ax.set_xticklabels([_format_axis_label(theme) for theme in valid_themes], rotation=45, ha="right")
+    ax.set_yticks(range(len(valid_partners)))
+    ax.set_yticklabels([_format_axis_label(partner) for partner in valid_partners])
+
+    output_path = charts_dir / "partner_theme_delta_heatmap.png"
+    _save_chart(fig, output_path)
+    plt.close(fig)
+    return _to_markdown_image(Path(image_prefix) / output_path.name, "Partner x Theme Delta Heatmap")
+
+
+def generate_comparative_charts(
+    comparative_data: dict[str, Any],
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    charts = [
+        generate_partner_theme_heatmap(
+            comparative_data=comparative_data,
+            charts_dir=charts_dir,
+            image_prefix=image_prefix,
+        ),
+        generate_delta_heatmap(
+            comparative_data=comparative_data,
+            charts_dir=charts_dir,
+            image_prefix=image_prefix,
+        ),
+        generate_partner_specialization_bar_chart(
+            comparative_data=comparative_data,
+            charts_dir=charts_dir,
+            image_prefix=image_prefix,
+        ),
+        generate_theme_coverage_chart(
+            comparative_data=comparative_data,
+            charts_dir=charts_dir,
+            image_prefix=image_prefix,
+        ),
+    ]
+    valid = [chart for chart in charts if chart]
+    return "\n\n".join(valid)
+
+
 def generate_trend_charts(
     trend_data: dict[str, Any],
     charts_dir: Path = Path("docs/charts"),
@@ -331,23 +573,71 @@ def generate_chart_markdown(
     return markdown
 
 
+def generate_comparative_chart_markdown(
+    comparative_data_path: Path,
+    charts_dir: Path = Path("docs/charts/comparative"),
+    image_prefix: str = "charts/comparative",
+) -> str:
+    if not comparative_data_path.exists():
+        log(f"Comparative data file not found: {comparative_data_path}")
+        return ""
+
+    comparative_data = _load_json(comparative_data_path)
+    markdown = generate_comparative_charts(
+        comparative_data=comparative_data,
+        charts_dir=charts_dir,
+        image_prefix=image_prefix,
+    )
+    if markdown:
+        log("Generated comparative chart markdown for embedding")
+    else:
+        log("No comparative chart markdown generated")
+    return markdown
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate trend charts from historical analyses")
     parser.add_argument("--analyses-dir", default="analyses", help="Directory containing analysis JSON files")
     parser.add_argument("--charts-dir", default="docs/charts", help="Directory to write generated PNG charts")
     parser.add_argument("--trend-data", default="", help="Optional precomputed trend data JSON path")
+    parser.add_argument("--comparative-data", default="", help="Optional comparative data JSON path")
+    parser.add_argument(
+        "--comparative-charts-dir",
+        default="docs/charts/comparative",
+        help="Directory to write comparative PNG charts",
+    )
+    parser.add_argument(
+        "--comparative-markdown-output",
+        default="",
+        help="Optional path to write comparative chart markdown",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    markdown = generate_chart_markdown(
+    trend_markdown = generate_chart_markdown(
         analyses_dir=Path(args.analyses_dir),
         charts_dir=Path(args.charts_dir),
         trend_data_path=Path(args.trend_data) if args.trend_data else None,
     )
-    if markdown:
-        print(markdown)
+    if trend_markdown:
+        print(trend_markdown)
+
+    if args.comparative_data:
+        comparative_markdown = generate_comparative_chart_markdown(
+            comparative_data_path=Path(args.comparative_data),
+            charts_dir=Path(args.comparative_charts_dir),
+            image_prefix="charts/comparative",
+        )
+        if comparative_markdown:
+            print(comparative_markdown)
+
+        if args.comparative_markdown_output:
+            output_path = Path(args.comparative_markdown_output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text((comparative_markdown or "").rstrip() + "\n", encoding="utf-8")
+            log(f"Wrote comparative chart markdown to {output_path}")
 
 
 if __name__ == "__main__":

@@ -370,6 +370,29 @@ def _build_navigation_links(
     return f"{theme_links}\n\n{partner_links}"
 
 
+def _build_comparative_insights_section(docs_dir: Path) -> str:
+    comparative_path = docs_dir / "comparative.md"
+    if not comparative_path.exists():
+        return ""
+
+    lines = [
+        "## Cross-Partner × Cross-Theme Insights",
+        "",
+        "- [Open comparative analytics](comparative.md)",
+    ]
+
+    preview_path = docs_dir / "charts" / "comparative" / "partner_theme_heatmap.png"
+    if preview_path.exists():
+        lines.extend(
+            [
+                "",
+                '<img src="charts/comparative/partner_theme_heatmap.png" width="700" alt="Partner by theme heatmap preview" />',
+            ]
+        )
+
+    return "\n".join(lines)
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -483,6 +506,15 @@ def fill_template_placeholders(
     rendered = template_text
     for placeholder, value in replacements.items():
         rendered = rendered.replace(placeholder, value)
+
+    comparative_section = _build_comparative_insights_section(docs_dir=docs_dir)
+    if comparative_section:
+        marker = "\n## Full Summary"
+        if marker in rendered:
+            rendered = rendered.replace(marker, f"\n{comparative_section}\n\n## Full Summary", 1)
+        else:
+            rendered = rendered.rstrip() + f"\n\n{comparative_section}\n"
+
     return rendered.rstrip() + "\n"
 
 

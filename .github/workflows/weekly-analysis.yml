@@ -153,16 +153,30 @@ jobs:
               --analyses-dir analyses \
               --output docs/trend_data.json
 
-            python scripts/charting.py \
-              --analyses-dir analyses \
-              --charts-dir docs/charts \
-              --trend-data docs/trend_data.json
-
             python scripts/theme_renderer.py \
               --analyses-dir analyses \
               --template docs/theme_template.md \
               --themes-dir docs/themes \
               --charts-dir docs/charts/themes
+
+            python scripts/comparative_analysis.py \
+              --analyses-dir analyses \
+              --output docs/comparative_data.json
+
+            python scripts/charting.py \
+              --analyses-dir analyses \
+              --charts-dir docs/charts \
+              --trend-data docs/trend_data.json \
+              --comparative-data docs/comparative_data.json \
+              --comparative-charts-dir docs/charts/comparative \
+              --comparative-markdown-output docs/comparative_charts.md
+
+            python scripts/comparative_analysis.py \
+              --analyses-dir analyses \
+              --output docs/comparative_data.json \
+              --markdown-output docs/comparative.md \
+              --charts-markdown docs/comparative_charts.md \
+              --docs-dir docs
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -225,4 +239,4 @@ jobs:
             pipeline_error.json
           if-no-files-found: ignore
 
-# Suggested commit message: feat: add theme-level dashboards with historical insights and charts
+# Suggested commit message: feat: add cross-partner × cross-theme comparative analytics and heatmaps
