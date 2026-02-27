@@ -54,6 +54,11 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         "email_username": os.environ.get("EMAIL_USERNAME") or "",
         "email_password": os.environ.get("EMAIL_PASSWORD") or "",
         "email_to": os.environ.get("EMAIL_TO") or "",
+        "chain_max_depth": _as_int(os.environ.get("CHAIN_MAX_DEPTH"), 2),
+        "chain_max_branches": _as_int(os.environ.get("CHAIN_MAX_BRANCHES"), 2),
+        "chain_timeout_sec": _as_int(os.environ.get("CHAIN_TIMEOUT_SEC"), 45),
+        "chain_min_confidence_delta": _as_float(os.environ.get("CHAIN_MIN_CONFIDENCE_DELTA"), 0.08),
+        "chain_budget_usd": _as_float(os.environ.get("CHAIN_BUDGET_USD"), 0.5),
     }
 
     if overrides:
@@ -78,6 +83,11 @@ def load_config(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg["timeout_seconds"] = _as_int(cfg.get("timeout_seconds"), 60)
     cfg["api_key"] = api_key
     cfg["followup_model"] = str(cfg.get("followup_model") or cfg.get("model") or "gpt-4.1-mini")
+    cfg["chain_max_depth"] = _as_int(cfg.get("chain_max_depth"), 2)
+    cfg["chain_max_branches"] = _as_int(cfg.get("chain_max_branches"), 2)
+    cfg["chain_timeout_sec"] = _as_int(cfg.get("chain_timeout_sec"), 45)
+    cfg["chain_min_confidence_delta"] = _as_float(cfg.get("chain_min_confidence_delta"), 0.08)
+    cfg["chain_budget_usd"] = _as_float(cfg.get("chain_budget_usd"), 0.5)
     return cfg
 
 

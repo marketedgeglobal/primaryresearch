@@ -506,6 +506,59 @@ def _build_followup_investigations_section(run_id: str, analyses_dir: Path, docs
     return "\n".join(lines)
 
 
+def _build_followup_chains_section(run_id: str, analyses_dir: Path, docs_dir: Path) -> str:
+    alerts_path = analyses_dir / f"alerts-{run_id}.json"
+    if not alerts_path.exists():
+        return ""
+
+    payload = _load_json(alerts_path)
+    alerts = payload.get("alerts") if isinstance(payload.get("alerts"), list) else []
+    chain_alerts = [
+        item
+        for item in alerts
+        if isinstance(item, dict) and str(item.get("severity")) == "high" and str(item.get("chain_path") or "").strip()
+    ]
+    if not chain_alerts:
+        return ""
+
+    lines = ["## Follow-Up Chains", ""]
+    for alert in chain_alerts[:5]:
+        title = str(alert.get("title") or "Untitled alert")
+        status = str(alert.get("chain_status") or "unknown")
+        chain_path_value = str(alert.get("chain_path") or "").strip()
+        chain_doc = Path(chain_path_value)
+        if not chain_doc.exists():
+            chain_doc = docs_dir / chain_doc.name
+        chain_doc_name = chain_doc.name if chain_doc.exists() else chain_path_value
+        chain_json = analyses_dir / f"{Path(chain_doc_name).stem}.json"
+
+        conclusion = str(alert.get("chain_conclusion") or "").strip()
+        steps_count = int(alert.get("chain_steps_count") or 0)
+        cost_est = _safe_float(alert.get("chain_cost_estimate"), 0.0)
+        final_conf = _safe_float(alert.get("chain_final_confidence"), 0.0)
+
+        if chain_json.exists():
+            try:
+                chain_payload = _load_json(chain_json)
+                summary = chain_payload.get("summary") if isinstance(chain_payload.get("summary"), dict) else {}
+                if not conclusion:
+                    conclusion = str(chain_payload.get("conclusion") or "").strip()
+                steps_count = int(summary.get("steps_count") or len(chain_payload.get("audit_trail") or []) or steps_count)
+                cost_est = _safe_float(chain_payload.get("cost_estimate"), cost_est)
+                final_conf = _safe_float(summary.get("final_confidence"), final_conf)
+                status = str(chain_payload.get("status") or status)
+            except Exception:
+                pass
+
+        teaser = conclusion[:220] + ("..." if len(conclusion) > 220 else "") if conclusion else "Chain completed."
+        lines.append(f"- **{title}** (status: {status})")
+        lines.append(f"  - {teaser}")
+        lines.append(f"  - Audit: steps {steps_count}, cost ${cost_est:.4f}, final confidence {final_conf:.2f}")
+        lines.append(f"  - [Open chain details]({chain_doc_name})")
+
+    return "\n".join(lines)
+
+
 def _render_partner_dashboards(
     *,
     analysis: dict[str, Any],
@@ -625,10 +678,17 @@ def fill_template_placeholders(
     top_insights_section = _build_top_automated_insights_section(analysis, run_id, docs_dir)
     automated_alerts_section = _build_automated_alerts_section(run_id, analyses_dir, docs_dir)
     followups_section = _build_followup_investigations_section(run_id, analyses_dir, docs_dir)
+    followup_chains_section = _build_followup_chains_section(run_id, analyses_dir, docs_dir)
 
     prepend_sections = [
         section
-        for section in (comparative_section, top_insights_section, automated_alerts_section, followups_section)
+        for section in (
+            comparative_section,
+            top_insights_section,
+            automated_alerts_section,
+            followups_section,
+            followup_chains_section,
+        )
         if section
     ]
     if prepend_sections:

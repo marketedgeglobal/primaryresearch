@@ -1,0 +1,78 @@
+{
+  "decline_root_cause_chain": {
+    "description": "Investigate decline signals with hypothesis branching and validation.",
+    "policy_overrides": {
+      "max_depth": 2,
+      "max_branches": 2,
+      "timeout_sec": 60,
+      "budget_usd": 0.35,
+      "min_confidence_delta": 0.06
+    },
+    "steps": [
+      {
+        "id": "compare-last-runs",
+        "type": "compare_runs",
+        "params": {
+          "lookback": 3
+        },
+        "branching": {
+          "use_spawn_actions": false
+        }
+      },
+      {
+        "id": "extract-supporting-evidence",
+        "type": "extract_evidence",
+        "params": {
+          "top_n": 6
+        },
+        "branching": {
+          "use_spawn_actions": false
+        }
+      },
+      {
+        "id": "generate-root-cause-hypotheses",
+        "type": "hypothesis_generation",
+        "params": {
+          "top_k": 4,
+          "spawn_top_n": 2
+        },
+        "branching": {
+          "use_spawn_actions": true,
+          "max_children": 2
+        }
+      }
+    ]
+  },
+  "emergence_deep_dive_chain": {
+    "description": "Deep-dive newly emerged signals and produce actionable recommendations.",
+    "policy_overrides": {
+      "max_depth": 1,
+      "max_branches": 1,
+      "timeout_sec": 45,
+      "budget_usd": 0.25,
+      "min_confidence_delta": 0.05
+    },
+    "steps": [
+      {
+        "id": "extract-emergent-evidence",
+        "type": "extract_evidence",
+        "params": {
+          "top_n": 5
+        },
+        "branching": {
+          "use_spawn_actions": false
+        }
+      },
+      {
+        "id": "targeted-emergence-analysis",
+        "type": "targeted_analysis",
+        "params": {
+          "objective": "Explain what appears to be emerging, likely drivers, and specific recommended next steps."
+        },
+        "branching": {
+          "use_spawn_actions": false
+        }
+      }
+    ]
+  }
+}

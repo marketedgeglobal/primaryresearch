@@ -30,6 +30,12 @@ jobs:
       EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      CHAIN_MAX_DEPTH: '2'
+      CHAIN_MAX_BRANCHES: '2'
+      CHAIN_TIMEOUT_SEC: '45'
+      CHAIN_MIN_CONFIDENCE_DELTA: '0.08'
+      CHAIN_BUDGET_USD: '0.50'
+      CHAIN_WORKFLOW_TIMEOUT_SEC: '180'
 
     steps:
       - name: Checkout repository
@@ -230,6 +236,12 @@ jobs:
             log(f"Generated {len(high_with_followups)} follow-up investigations for high-severity alerts")
             log(f"Alert outputs: {paths}")
             PY
+
+            timeout "${CHAIN_WORKFLOW_TIMEOUT_SEC}s" python scripts/followups.py \
+              --run-id "$RUN_ID" \
+              --alerts "$OUTPUT_DIR/alerts-$RUN_ID.json" \
+              --output-dir "$OUTPUT_DIR" \
+              --templates "scripts/templates/chain_templates.yml"
           else
             echo "No historical analysis files found; skipping chart generation."
           fi
@@ -255,9 +267,11 @@ jobs:
             ${{ env.OUTPUT_DIR }}/insights-${{ steps.runmeta.outputs.run_id }}.json
             ${{ env.OUTPUT_DIR }}/alerts-${{ steps.runmeta.outputs.run_id }}.json
             ${{ env.OUTPUT_DIR }}/followup-${{ steps.runmeta.outputs.run_id }}-*.json
+            ${{ env.OUTPUT_DIR }}/followup-${{ steps.runmeta.outputs.run_id }}-*-chain.json
             docs/insights-${{ steps.runmeta.outputs.run_id }}.md
             docs/alerts-${{ steps.runmeta.outputs.run_id }}.md
             docs/followup-${{ steps.runmeta.outputs.run_id }}-*.md
+            docs/followup-${{ steps.runmeta.outputs.run_id }}-*-chain.md
             analyses/weekly-${{ steps.runmeta.outputs.run_id }}.json
           if-no-files-found: warn
 

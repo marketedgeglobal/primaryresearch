@@ -6,11 +6,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import argparse
 from pathlib import Path
 from typing import Any
 
 import requests
 
+from chain_orchestrator import run_chain
+from config import load_config
 from log_utils import log
 from output_writer import write_json
 
@@ -362,3 +365,216 @@ def write_followup_output(run_id: str, alert_id: str, followup: dict[str, Any], 
         "analysis_json": str(analysis_path),
         "docs_markdown": str(docs_path),
     }
+
+
+def _load_chain_templates(path: str | Path) -> dict[str, Any]:
+    template_path = Path(path)
+    if not template_path.exists():
+        return {}
+    try:
+        loaded = json.loads(template_path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
+def _select_chain_template(alert: dict[str, Any], templates: dict[str, Any]) -> dict[str, Any] | None:
+    alert_type = str(alert.get("type") or "").strip().lower()
+    preferred_name = "decline_root_cause_chain" if alert_type == "decline" else "emergence_deep_dive_chain"
+    preferred = templates.get(preferred_name) if isinstance(templates.get(preferred_name), dict) else None
+    if preferred is not None:
+        return preferred
+
+    for value in templates.values():
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _load_current_analysis(run_id: str, output_dir: str) -> dict[str, Any]:
+    weekly_path = Path(output_dir) / f"weekly-{run_id}.json"
+    if not weekly_path.exists():
+        weekly_path = Path("analyses") / f"weekly-{run_id}.json"
+    if not weekly_path.exists():
+        return {}
+    try:
+        payload = json.loads(weekly_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_chain_output(
+    run_id: str,
+    alert: dict[str, Any],
+    chain_result: dict[str, Any],
+    output_dir: str,
+) -> dict[str, str]:
+    alert_id = str(alert.get("id") or "alert")
+    sanitized_alert_id = _sanitize_for_filename(alert_id)
+    file_stem = f"followup-{run_id}-{sanitized_alert_id}-chain"
+
+    analysis_path = Path(output_dir) / f"{file_stem}.json"
+    docs_path = Path("docs") / f"{file_stem}.md"
+
+    write_json(str(analysis_path), chain_result)
+
+    summary = chain_result.get("summary") if isinstance(chain_result.get("summary"), dict) else {}
+    steps_count = int(summary.get("steps_count") or len(chain_result.get("audit_trail") or []))
+    final_confidence = _safe_float(summary.get("final_confidence"), 0.0)
+    cost_estimate = _safe_float(chain_result.get("cost_estimate"), 0.0)
+    status = str(chain_result.get("status") or "unknown")
+    conclusion = str(chain_result.get("conclusion") or "No conclusion generated.").strip()
+
+    markdown_lines = [
+        f"# Follow-Up Chain — {alert_id}",
+        "",
+        f"Run ID: {run_id}",
+        f"Status: {status}",
+        f"Steps: {steps_count}",
+        f"Final confidence: {final_confidence:.2f}",
+        f"Cost estimate: ${cost_estimate:.4f}",
+        "",
+        "## Conclusion",
+        "",
+        conclusion,
+        "",
+        "## Audit Summary",
+        "",
+        f"- Total steps: {steps_count}",
+        f"- Estimated cost: ${cost_estimate:.4f}",
+        f"- Final confidence: {final_confidence:.2f}",
+        "",
+        "## Step Decisions",
+        "",
+    ]
+
+    for entry in chain_result.get("audit_trail", []):
+        if not isinstance(entry, dict):
+            continue
+        step_id = str(entry.get("step_id") or "step")
+        step_type = str(entry.get("type") or "unknown")
+        decision = str(entry.get("decision") or "unknown")
+        confidence = _safe_float(entry.get("confidence"), 0.0)
+        metrics = entry.get("metrics") if isinstance(entry.get("metrics"), dict) else {}
+        tokens = int(metrics.get("tokens") or 0)
+        cost = _safe_float(metrics.get("cost_est"), 0.0)
+        markdown_lines.append(
+            f"- **{step_id}** ({step_type}) → {decision} | confidence: {confidence:.2f} | tokens: {tokens} | cost: ${cost:.4f}"
+        )
+
+    markdown_lines.append("")
+    docs_path.parent.mkdir(parents=True, exist_ok=True)
+    docs_path.write_text("\n".join(markdown_lines), encoding="utf-8")
+
+    return {
+        "analysis_json": str(analysis_path),
+        "docs_markdown": str(docs_path),
+    }
+
+
+def run_followup_chains_for_alerts(alerts: list[dict[str, Any]], run_id: str, config: dict[str, Any]) -> list[dict[str, Any]]:
+    output_dir = str(config.get("output_dir") or "analyses")
+    analysis_history = config.get("analysis_history") if isinstance(config.get("analysis_history"), list) else []
+    current_analysis = config.get("current_analysis") if isinstance(config.get("current_analysis"), dict) else {}
+    if not current_analysis:
+        current_analysis = _load_current_analysis(run_id, output_dir)
+
+    template_path = str(config.get("chain_template_path") or "scripts/templates/chain_templates.yml")
+    templates = _load_chain_templates(template_path)
+
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        if str(alert.get("severity") or "").strip().lower() != "high":
+            continue
+
+        template = _select_chain_template(alert, templates)
+        if template is None:
+            alert["chain_path"] = ""
+            alert["chain_status"] = "skipped"
+            continue
+
+        context = {
+            "alert": alert,
+            "analysis_history": analysis_history,
+            "current_analysis": current_analysis,
+        }
+
+        try:
+            chain_result = run_chain(template, context, config)
+            output_paths = _write_chain_output(run_id, alert, chain_result, output_dir)
+            summary = chain_result.get("summary") if isinstance(chain_result.get("summary"), dict) else {}
+
+            alert["chain_path"] = output_paths["docs_markdown"]
+            alert["chain_status"] = str(chain_result.get("status") or "completed")
+            alert["chain_conclusion"] = str(chain_result.get("conclusion") or "").strip()
+            alert["chain_cost_estimate"] = _safe_float(chain_result.get("cost_estimate"), 0.0)
+            alert["chain_final_confidence"] = _safe_float(summary.get("final_confidence"), 0.0)
+            alert["chain_steps_count"] = int(summary.get("steps_count") or len(chain_result.get("audit_trail") or []))
+        except Exception as exc:
+            log(f"Follow-up chain generation failed for alert {alert.get('id')}: {exc}")
+            alert["chain_path"] = ""
+            alert["chain_status"] = "failed"
+
+    return alerts
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate investigative chains for high-severity alerts")
+    parser.add_argument("--run-id", required=True, help="Run identifier")
+    parser.add_argument("--alerts", default="", help="Path to alerts JSON payload")
+    parser.add_argument("--output-dir", default="analyses", help="Analysis output directory")
+    parser.add_argument("--templates", default="scripts/templates/chain_templates.yml", help="Chain templates path")
+    return parser.parse_args()
+
+
+def _load_runtime_config(run_id: str, output_dir: str, templates_path: str) -> dict[str, Any]:
+    overrides = {
+        "run_id": run_id,
+        "output_dir": output_dir,
+        "chain_template_path": templates_path,
+    }
+    try:
+        cfg = load_config(overrides)
+    except Exception:
+        cfg = {
+            "provider": os.environ.get("AI_PROVIDER") or "openai",
+            "api_key": os.environ.get("AI_API_KEY") or "",
+            "model": os.environ.get("AI_MODEL") or "gpt-4o-mini",
+            "followup_model": os.environ.get("FOLLOWUP_MODEL") or os.environ.get("AI_MODEL") or "gpt-4.1-mini",
+            "timeout_seconds": int(os.environ.get("AI_TIMEOUT_SECONDS") or 60),
+            "output_dir": output_dir,
+        }
+    cfg["chain_template_path"] = templates_path
+    cfg["chain_max_depth"] = int(os.environ.get("CHAIN_MAX_DEPTH") or cfg.get("chain_max_depth") or 2)
+    cfg["chain_max_branches"] = int(os.environ.get("CHAIN_MAX_BRANCHES") or cfg.get("chain_max_branches") or 2)
+    cfg["chain_timeout_sec"] = int(os.environ.get("CHAIN_TIMEOUT_SEC") or cfg.get("chain_timeout_sec") or 45)
+    cfg["chain_min_confidence_delta"] = float(
+        os.environ.get("CHAIN_MIN_CONFIDENCE_DELTA") or cfg.get("chain_min_confidence_delta") or 0.08
+    )
+    cfg["chain_budget_usd"] = float(os.environ.get("CHAIN_BUDGET_USD") or cfg.get("chain_budget_usd") or 0.5)
+    return cfg
+
+
+def main() -> None:
+    args = _parse_args()
+    alerts_path = Path(args.alerts) if args.alerts else Path(args.output_dir) / f"alerts-{args.run_id}.json"
+    if not alerts_path.exists():
+        raise FileNotFoundError(f"Missing alerts file: {alerts_path}")
+
+    payload = json.loads(alerts_path.read_text(encoding="utf-8"))
+    alerts = payload.get("alerts") if isinstance(payload.get("alerts"), list) else []
+    if not isinstance(alerts, list):
+        alerts = []
+
+    cfg = _load_runtime_config(args.run_id, args.output_dir, args.templates)
+    run_followup_chains_for_alerts(alerts, args.run_id, cfg)
+
+    payload["alerts"] = alerts
+    write_json(str(alerts_path), payload)
+    log(f"Updated alerts with follow-up chains: {alerts_path}")
+
+
+if __name__ == "__main__":
+    main()

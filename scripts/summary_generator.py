@@ -94,6 +94,65 @@ def _build_followups_section(run_id: str, analyses_dir: Path = Path("analyses"))
     return lines
 
 
+def _build_followup_chains_section(run_id: str, analyses_dir: Path = Path("analyses")) -> list[str]:
+    alerts_path = analyses_dir / f"alerts-{run_id}.json"
+    if not alerts_path.exists():
+        return []
+
+    try:
+        payload = json.loads(alerts_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    alerts = payload.get("alerts") if isinstance(payload, dict) else []
+    if not isinstance(alerts, list):
+        return []
+
+    chain_alerts = [
+        item
+        for item in alerts
+        if isinstance(item, dict) and str(item.get("severity")) == "high" and str(item.get("chain_path") or "").strip()
+    ]
+    if not chain_alerts:
+        return []
+
+    lines = ["## Follow-Up Chains", ""]
+    for alert in chain_alerts[:3]:
+        title = str(alert.get("title") or "Untitled alert")
+        status = str(alert.get("chain_status") or "unknown")
+        chain_doc = Path(str(alert.get("chain_path") or "")).name
+        chain_json = analyses_dir / f"{Path(chain_doc).stem}.json"
+
+        conclusion = str(alert.get("chain_conclusion") or "").strip()
+        steps_count = int(alert.get("chain_steps_count") or 0)
+        cost_est = _safe_float(alert.get("chain_cost_estimate"), 0.0)
+        final_conf = _safe_float(alert.get("chain_final_confidence"), 0.0)
+
+        if chain_json.exists():
+            try:
+                payload = json.loads(chain_json.read_text(encoding="utf-8"))
+                summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+                if not conclusion:
+                    conclusion = str(payload.get("conclusion") or "").strip()
+                steps_count = int(summary.get("steps_count") or len(payload.get("audit_trail") or []) or steps_count)
+                cost_est = _safe_float(payload.get("cost_estimate"), cost_est)
+                final_conf = _safe_float(summary.get("final_confidence"), final_conf)
+                status = str(payload.get("status") or status)
+            except Exception:
+                pass
+
+        teaser = conclusion[:180] + ("..." if len(conclusion) > 180 else "") if conclusion else "Chain completed."
+        lines.append(f"- **{title}** (status: {status})")
+        lines.append(f"  - {teaser}")
+        lines.append(
+            f"  - Audit: steps {steps_count}, cost ${cost_est:.4f}, final confidence {final_conf:.2f}"
+        )
+        lines.append(f"  - Chain details: [{chain_doc}]({chain_doc})")
+
+    lines.append("")
+    return lines
+
+
 def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
     generated_utc = str(analysis.get("generated_utc") or "")
     sheet_summary = str(analysis.get("sheet_summary") or "No summary available.")
@@ -113,6 +172,7 @@ def build_markdown_summary(analysis: dict[str, Any], run_id: str) -> str:
 
     lines.extend(_build_top_insights_section(analysis, run_id))
     lines.extend(_build_followups_section(run_id))
+    lines.extend(_build_followup_chains_section(run_id))
 
     if top_tags:
         lines.append("## Top Tags")
